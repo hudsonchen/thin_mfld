@@ -1,0 +1,16 @@
+{
+"version": "0.2.0",
+"configurations": [
+    {
+        "name": "Python: NN",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceRoot}/main.py",
+        "console": "integratedTerminal",
+        "cwd": "${workspaceFolder}",
+        "justMyCode": true,
+        "python": "/home/zongchen/miniconda3/envs/thin_mfld/bin/python",
+        // "args": ["--eps", "0.1"],
+    },
+    ]
+}
