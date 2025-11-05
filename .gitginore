@@ -1,3 +1,5 @@
-results/
 .vscode/
 __pycache__/
+/results
+/plotting_notebooks
+/debugging_notebooks
