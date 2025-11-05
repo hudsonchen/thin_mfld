@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Callable, Optional
 import math
+import jax
 import jax.numpy as jnp
 import numpy as np
 from jax import jit, vmap, grad, random, lax
@@ -14,9 +15,10 @@ from utils.configs import CFG
 from utils.problems import Problem
 from jaxtyping import Array 
 from jax_tqdm import scan_tqdm
-from utils.kt import kt_compresspp
+# from utils.kt import kt_compresspp
 from tqdm import tqdm
 # from goodpoints.jax.compress import kt_compresspp
+from goodpoints import compress
 from goodpoints.jax.sliceable_points import SliceablePoints
 
 
@@ -63,19 +65,30 @@ class MFLD:
         self.counter = 0
         self.seed = cfg.seed
 
-        if thinning:
+        if thinning == 'kt':
             kernel_fn = partial(uncentered_matern_32_kernel, l=float(1.0))
             rng = np.random.default_rng(self.seed)
+            # def thin_fn(x):
+            #     points = SliceablePoints({"X": x})  
+            #     coresets = kt_compresspp(kernel_fn, points, w=jnp.ones(self.cfg.N) / self.cfg.N, 
+            #                  rng_gen=rng, inflate_size=int(256), g=0, delta=0.5)
+            #     return x[coresets, :]
             def thin_fn(x):
-                points = SliceablePoints({"X": x})  
-                coresets = kt_compresspp(kernel_fn, points, w=jnp.ones(self.cfg.N) / self.cfg.N, 
-                             rng_gen=rng, inflate_size=int(256), g=0, delta=0.5)
-                return x[coresets, :]
+                x_cpu = np.array(np.asarray(x))
+                coresets = compress.compresspp_kt(x_cpu, kernel_type=b"gaussian", k_params=np.ones(1), g=0)
+                return jax.device_put(x_cpu[coresets, :])
             self.thin_fn = thin_fn
-        else:
+        elif thinning == 'random':
+            def thin_fn(x):
+                rng = np.random.default_rng(self.seed + self.counter)
+                indices = rng.choice(self.cfg.N, size=int(jnp.sqrt(self.cfg.N)), replace=False)
+                return x[indices, :]
+            self.thin_fn = thin_fn
+        elif thinning == 'false':
             self.thin_fn = lambda x: x
-        
-        # Build vmapped helpers once (static w.r.t. self)
+        else:
+            raise ValueError(f"Unknown thinning method: {thinning}")
+
         self._vm_q1 = vmap(vmap(self.problem.q1, in_axes=(None, 0)), in_axes=(0, None))  # (N,d) -> (N,)
         self._vm_grad_q1 = vmap(vmap(grad(self.problem.q1, argnums=1), in_axes=(None, 0)), in_axes=(0, None))      # (N,d) -> (N,d)
 
@@ -122,9 +135,9 @@ class MFLD:
         key = random.PRNGKey(self.cfg.seed)
         if x0 is None:
             key, sub = random.split(key)
-            # x0 = 0.5 * random.normal(sub, (self.cfg.N, self.problem.particle_d)) * 0.1
-            W1_0, b1_0, W2_0, b2_0 = initialize(key, self.problem.data_d, d_hidden=self.cfg.N, d_out=1)
-            x0 = jnp.concatenate([W1_0.T, b1_0[:, None], W2_0, b2_0[:, None]], axis=1)  # (N, d)
+            x0 = 0.5 * random.normal(sub, (self.cfg.N, self.problem.particle_d)) * 0.1
+            # W1_0, b1_0, W2_0, b2_0 = initialize(key, self.problem.data_d, d_hidden=self.cfg.N, d_out=1)
+            # x0 = jnp.concatenate([W1_0.T, b1_0[:, None], W2_0, b2_0[:, None]], axis=1)  # (N, d)
 
         x = x0
         path = []

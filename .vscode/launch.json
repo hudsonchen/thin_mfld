@@ -10,7 +10,7 @@
         "cwd": "${workspaceFolder}",
         "justMyCode": true,
         "python": "/home/zongchen/miniconda3/envs/thin_mfld/bin/python",
-        // "args": ["--eps", "0.1"],
+        "args": ["--thinning", "kt", "--step_size", "0.1", "--noise_scale", "0.1", "--bandwidth", "1.0", "--step_num", "5000", "--particle_num", "256"],
     },
     ]
 }

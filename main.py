@@ -16,13 +16,14 @@ def get_config():
 
     # Args settings
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--dataset', type=str, default='Gaussian')
-    parser.add_argument('--kernel', type=str, default='Gaussian')
+    parser.add_argument('--kernel', type=str, default='Matern')
     parser.add_argument('--step_size', type=float, default=0.1)
     parser.add_argument('--noise_scale', type=float, default=0.1)
     parser.add_argument('--bandwidth', type=float, default=1.0)
     parser.add_argument('--step_num', type=int, default=100)
     parser.add_argument('--particle_num', type=int, default=100)
+    parser.add_argument('--save_path', type=str, default='./results/')
+    parser.add_argument('--thinning', type=str, default='kt')
     args = parser.parse_args()  
     return args
 
@@ -30,8 +31,8 @@ def create_dir(args):
     if args.seed is None:
         args.seed = int(time.time())
     args.save_path += f"neural_network/uci/matern_kernel/"
-    args.save_path += f"__step_size_{round(args.step_size, 8)}__bandwidth_{args.bandwidth}__step_num_{args.step_num}"
-    args.save_path += f"__particle_num_{args.particle_num}__inject_noise_scale_{args.inject_noise_scale}"
+    args.save_path += f"__thinning_{args.thinning}__step_size_{args.step_size}__bandwidth_{args.bandwidth}__step_num_{args.step_num}"
+    args.save_path += f"__particle_num_{args.particle_num}__noise_scale_{args.noise_scale}"
     args.save_path += f"__seed_{args.seed}"
     os.makedirs(args.save_path, exist_ok=True)
     with open(f'{args.save_path}/configs', 'wb') as handle:
@@ -45,17 +46,17 @@ def R1_prime(s):  # R1(s)=0.5*s^2
 
 def q1_nn(z, x):
     # Simple 2-layer NN for demonstration
-    d_hidden = x.shape[0] - 3
-    W1, b1, W2, b2 = x[:d_hidden], x[d_hidden+1], x[d_hidden+2], x[d_hidden+3]
+    d_hidden = x.shape[0] - 2
+    W1, b1, W2 = x[:d_hidden], x[d_hidden+1], x[d_hidden+2]
     h = jnp.tanh(z @ W1 + b1)
-    return jnp.dot(W2, h) + b2
+    return jnp.dot(W2, h)
 
 
 data = load_boston(batch_size=64, standardize_X=True, standardize_y=False)
 
 
 problem_nn = Problem(
-    particle_d=data["Z"].shape[-1] + 3,  # NN params dimension
+    particle_d=data["Z"].shape[-1] + 2,  # NN params dimension
     data_d=data["Z"].shape[-1],
     R1_prime=R1_prime,
     q1=q1_nn,
@@ -65,11 +66,9 @@ problem_nn = Problem(
 )
 
 
-if __name__ == "__main__":
-    jax.config.update("jax_enable_x64", True)  # optional for stability
-    args = get_config()
+def main(args):
     cfg = CFG(N=256, steps=5000, step_size=args.step_size, sigma=1.0, zeta=1e-3, seed=0, return_path=True)
-    sim = MFLD(thinning=True, cfg=cfg, problem=problem_nn)
+    sim = MFLD(thinning=args.thinning, cfg=cfg, problem=problem_nn)
     xT = sim.simulate()
 
     def compute_mse(Z, y, params):
@@ -102,6 +101,7 @@ if __name__ == "__main__":
     print("Final Train MSE:", train_losses[-1])
     print("Final Test MSE:", test_losses[-1])
 
+    jnp.save(f'{args.save_path}/trajectory.npy', xT_subsampled)
     # ---- Plot ----
     import matplotlib.pyplot as plt
     plt.figure(figsize=(6,4))
@@ -113,8 +113,12 @@ if __name__ == "__main__":
     plt.legend()
     plt.tight_layout()
     plt.show()
-    plt.savefig("results/mfld_boston_nn_loss.png")
+    plt.savefig(f"{args.save_path}/mfld_boston_nn_loss.png")
+    return
 
+
+if __name__ == "__main__":
+    jax.config.update("jax_enable_x64", True)  # optional for stability
     args = get_config()
     args = create_dir(args)
     print('Program started!')
