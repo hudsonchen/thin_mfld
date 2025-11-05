@@ -67,7 +67,8 @@ problem_nn = Problem(
 
 
 def main(args):
-    cfg = CFG(N=args.particle_num, steps=args.step_num, step_size=args.step_size, sigma=args.noise_scale, zeta=1e-3, seed=0, return_path=True)
+    cfg = CFG(N=args.particle_num, steps=args.step_num, step_size=args.step_size, sigma=args.noise_scale, 
+              zeta=1e-3, seed=args.seed, return_path=True)
     sim = MFLD(thinning=args.thinning, cfg=cfg, problem=problem_nn)
     xT, mmd_path = sim.simulate()
 
