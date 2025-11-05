@@ -13,6 +13,7 @@ import numpy as np
 from jax import jit, vmap, grad, random, lax
 from utils.configs import CFG
 from utils.problems import Problem
+from utils.kernel import compute_mmd2
 from jaxtyping import Array 
 from jax_tqdm import scan_tqdm
 # from utils.kt import kt_compresspp
@@ -64,6 +65,7 @@ class MFLD:
         self.data = problem.data
         self.counter = 0
         self.seed = cfg.seed
+        # np.random.seed(self.seed)
 
         if thinning == 'kt':
             kernel_fn = partial(uncentered_matern_32_kernel, l=float(1.0))
@@ -75,7 +77,7 @@ class MFLD:
             #     return x[coresets, :]
             def thin_fn(x):
                 x_cpu = np.array(np.asarray(x))
-                coresets = compress.compresspp_kt(x_cpu, kernel_type=b"gaussian", k_params=np.ones(1), g=0)
+                coresets = compress.compresspp_kt(x_cpu, kernel_type=b"gaussian", k_params=np.ones(1), seed=self.seed, g=0)
                 return jax.device_put(x_cpu[coresets, :])
             self.thin_fn = thin_fn
         elif thinning == 'random':
@@ -123,13 +125,18 @@ class MFLD:
     def _step(self, carry, _):
         x, key = carry
         thinned_x = self.thin_fn(x)
+
+        # Debug code compare MMD between x and thinned_x 
+        mmd2 = compute_mmd2(x, thinned_x, bandwidth=1.0)
+        ###########################################
+
         v = self.vector_field(x, thinned_x)
         noise_scale = jnp.sqrt(2.0 * self.cfg.sigma * self.cfg.step_size)
         key, sub = random.split(key)
         noise = noise_scale * random.normal(sub, shape=x.shape)
         x_next = x - self.cfg.step_size * v + noise
         self.counter = (self.counter + 1) % self.data["batch_size"]
-        return (x_next, key), x_next
+        return (x_next, mmd2, key), x_next
 
     def simulate(self, x0: Optional[Array] = None) -> Array:
         key = random.PRNGKey(self.cfg.seed)
@@ -141,12 +148,14 @@ class MFLD:
 
         x = x0
         path = []
+        mmd_path = []
         for t in tqdm(range(self.cfg.steps)):
             key_, subkey = random.split(key)
-            (x, key) , _ = self._step((x, subkey), t)
+            (x, mmd2, key) , _ = self._step((x, subkey), t)
             path.append(x)
+            mmd_path.append(mmd2)
 
         path = jnp.stack(path, axis=0)          # (steps, N, d)
-        path = jnp.concatenate([x0[None, ...], path], axis=0)  # (steps+1, N, d)
-    
-        return path
+        mmd_path = jnp.stack(mmd_path, axis=0)  # (steps, )
+
+        return path, mmd_path

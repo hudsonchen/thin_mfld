@@ -67,9 +67,9 @@ problem_nn = Problem(
 
 
 def main(args):
-    cfg = CFG(N=256, steps=5000, step_size=args.step_size, sigma=1.0, zeta=1e-3, seed=0, return_path=True)
+    cfg = CFG(N=args.particle_num, steps=args.step_num, step_size=args.step_size, sigma=args.noise_scale, zeta=1e-3, seed=0, return_path=True)
     sim = MFLD(thinning=args.thinning, cfg=cfg, problem=problem_nn)
-    xT = sim.simulate()
+    xT, mmd_path = sim.simulate()
 
     def compute_mse(Z, y, params):
         """Compute MSE for a given parameter vector `params`."""
@@ -104,16 +104,30 @@ def main(args):
     jnp.save(f'{args.save_path}/trajectory.npy', xT_subsampled)
     # ---- Plot ----
     import matplotlib.pyplot as plt
-    plt.figure(figsize=(6,4))
-    plt.plot(train_losses, label="Train MSE")
-    plt.plot(test_losses, label="Test MSE")
-    plt.xlabel("Training step")
-    plt.ylabel("Mean Squared Error")
-    plt.title("Training / Test Loss vs Step")
-    plt.legend()
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+
+    # --- (1) Training and test losses ---
+    axes[0].plot(train_losses, label="Train MSE")
+    axes[0].plot(test_losses, label="Test MSE")
+    axes[0].set_ylabel("Mean Squared Error")
+    axes[0].set_title("Training / Test Loss vs Step")
+    axes[0].legend()
+    axes[0].grid(True, linestyle="--", alpha=0.5)
+
+    # --- (2) MMD^2 path ---
+    axes[1].plot(mmd_path, color="C2", label="MMD$^2$")
+    axes[1].set_xlabel("Training Step")
+    axes[1].set_ylabel("MMD$^2$")
+    axes[1].legend()
+    axes[1].set_yscale("log")
+    axes[1].grid(True, linestyle="--", alpha=0.5)
+
+    # --- Layout and save ---
     plt.tight_layout()
+    plt.savefig(f"{args.save_path}/mfld_boston_nn_loss_mmd.png", dpi=300)
     plt.show()
-    plt.savefig(f"{args.save_path}/mfld_boston_nn_loss.png")
+
     return
 
 
