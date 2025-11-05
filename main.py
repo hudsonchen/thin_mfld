@@ -6,6 +6,38 @@ import jax.numpy as jnp
 import jax
 from tqdm import tqdm
 from jax import lax
+import time
+import os
+import argparse
+import pickle
+
+def get_config():
+    parser = argparse.ArgumentParser(description='mmd_flow_cubature')
+
+    # Args settings
+    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--dataset', type=str, default='Gaussian')
+    parser.add_argument('--kernel', type=str, default='Gaussian')
+    parser.add_argument('--step_size', type=float, default=0.1)
+    parser.add_argument('--noise_scale', type=float, default=0.1)
+    parser.add_argument('--bandwidth', type=float, default=1.0)
+    parser.add_argument('--step_num', type=int, default=100)
+    parser.add_argument('--particle_num', type=int, default=100)
+    args = parser.parse_args()  
+    return args
+
+def create_dir(args):
+    if args.seed is None:
+        args.seed = int(time.time())
+    args.save_path += f"neural_network/uci/matern_kernel/"
+    args.save_path += f"__step_size_{round(args.step_size, 8)}__bandwidth_{args.bandwidth}__step_num_{args.step_num}"
+    args.save_path += f"__particle_num_{args.particle_num}__inject_noise_scale_{args.inject_noise_scale}"
+    args.save_path += f"__seed_{args.seed}"
+    os.makedirs(args.save_path, exist_ok=True)
+    with open(f'{args.save_path}/configs', 'wb') as handle:
+        pickle.dump(vars(args), handle, protocol=pickle.HIGHEST_PROTOCOL)
+    return args
+
 
 
 def R1_prime(s):  # R1(s)=0.5*s^2
@@ -34,10 +66,10 @@ problem_nn = Problem(
 
 
 if __name__ == "__main__":
-    # jax.config.update("jax_enable_x64", True)  # optional for stability
-
-    cfg = CFG(N=64, steps=50000, step_size=0.1, sigma=1.0, zeta=1e-2, seed=0, return_path=True)
-    sim = MFLD(thinning=False, cfg=cfg, problem=problem_nn)
+    jax.config.update("jax_enable_x64", True)  # optional for stability
+    args = get_config()
+    cfg = CFG(N=256, steps=5000, step_size=args.step_size, sigma=1.0, zeta=1e-3, seed=0, return_path=True)
+    sim = MFLD(thinning=True, cfg=cfg, problem=problem_nn)
     xT = sim.simulate()
 
     def compute_mse(Z, y, params):
@@ -82,3 +114,16 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
     plt.savefig("results/mfld_boston_nn_loss.png")
+
+    args = get_config()
+    args = create_dir(args)
+    print('Program started!')
+    print(vars(args))
+    main(args)
+    print('Program finished!')
+    new_save_path = args.save_path + '__complete'
+    import shutil
+    if os.path.exists(new_save_path):
+        shutil.rmtree(new_save_path)  # Deletes existing folder
+    os.rename(args.save_path, new_save_path)
+    print(f'Job completed. Renamed folder to: {new_save_path}')

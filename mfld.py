@@ -1,3 +1,4 @@
+
 # JAX mean-field Langevin dynamics as a reusable class.
 # v_mu(x) = R1'( E[q1] ) ∇q1(x) + E[ ∇_x q2(x, X̃) ]
 # dX_t = -v_mu(X_t) step_size + sqrt(2/β) dW_t
@@ -5,39 +6,51 @@
 from dataclasses import dataclass
 from functools import partial
 from typing import Callable, Optional
-
-import jax
+import math
 import jax.numpy as jnp
+import numpy as np
 from jax import jit, vmap, grad, random, lax
 from utils.configs import CFG
 from utils.problems import Problem
 from jaxtyping import Array 
 from jax_tqdm import scan_tqdm
-from goodpoints.jax.compress import kt_compresspp
+from utils.kt import kt_compresspp
+from tqdm import tqdm
+# from goodpoints.jax.compress import kt_compresspp
+from goodpoints.jax.sliceable_points import SliceablePoints
 
 
 def initialize(key, d_in, d_hidden, d_out):
     """PyTorch-like initialization for a 2-layer tanh MLP."""
-    k1, k2 = jax.random.split(key)
-    k3, k4 = jax.random.split(k2)
+    k1, k2 = random.split(key)
+    k3, k4 = random.split(k2)
 
     # Layer 1: Linear(d_in, d_hidden)
     # bound1 = jnp.sqrt(1.0 / d_in)
     bound1 = 1
-    # W1 = jax.random.uniform(k1, (d_in, d_hidden), minval=-bound1, maxval=bound1)
-    W1 = jax.random.normal(k1, (d_in, d_hidden)) * bound1
+    # W1 = random.uniform(k1, (d_in, d_hidden), minval=-bound1, maxval=bound1)
+    W1 = random.normal(k1, (d_in, d_hidden)) * bound1
     # b1 = jnp.zeros((d_hidden,))
-    b1 = jax.random.normal(k2, (d_hidden,)) * bound1
+    b1 = random.normal(k2, (d_hidden,)) * bound1
 
     # Layer 2: Linear(d_hidden, d_out)
     # bound2 = jnp.sqrt(1.0 / d_hidden)
     bound2 = 1
-    # W2 = jax.random.uniform(k2, (d_hidden, d_out), minval=-bound2, maxval=bound2)
-    W2 = jax.random.normal(k3, (d_hidden, d_out)) * bound2
+    # W2 = random.uniform(k2, (d_hidden, d_out), minval=-bound2, maxval=bound2)
+    W2 = random.normal(k3, (d_hidden, d_out)) * bound2
     # b2 = jnp.zeros((d_out,))
-    b2 = jax.random.normal(k4, (d_hidden, )) * bound2
+    b2 = random.normal(k4, (d_hidden, )) * bound2
     return W1, b1, W2, b2
 
+
+
+def uncentered_matern_32_kernel(points_x, points_y, l):
+    X, Y = points_x.get("X"), points_y.get("X")  # (N_x, d), (N_y, d)
+    # diff = X[:, None, :] - Y[None, :, :]         # (N_x, N_y, d)
+    diff = X - Y
+    dists = jnp.linalg.norm(diff, axis=-1)       # (N_x, N_y)
+    sqrt3_r = jnp.sqrt(3.0) * dists / l
+    return (1.0 + sqrt3_r) * jnp.exp(-sqrt3_r)   # (N_x, N_y)
 
 
 
@@ -48,13 +61,23 @@ class MFLD:
         self.problem = problem
         self.data = problem.data
         self.counter = 0
-        if thinning :
-            self.thin_fn = lambda x: x[::self.cfg.thin_factor, ...]
+        self.seed = cfg.seed
+
+        if thinning:
+            kernel_fn = partial(uncentered_matern_32_kernel, l=float(1.0))
+            rng = np.random.default_rng(self.seed)
+            def thin_fn(x):
+                points = SliceablePoints({"X": x})  
+                coresets = kt_compresspp(kernel_fn, points, w=jnp.ones(self.cfg.N) / self.cfg.N, 
+                             rng_gen=rng, inflate_size=int(256), g=0, delta=0.5)
+                return x[coresets, :]
+            self.thin_fn = thin_fn
         else:
             self.thin_fn = lambda x: x
+        
         # Build vmapped helpers once (static w.r.t. self)
-        self._vm_q1 = jax.vmap(jax.vmap(self.problem.q1, in_axes=(None, 0)), in_axes=(0, None))  # (N,d) -> (N,)
-        self._vm_grad_q1 = jax.vmap(jax.vmap(grad(self.problem.q1, argnums=1), in_axes=(None, 0)), in_axes=(0, None))      # (N,d) -> (N,d)
+        self._vm_q1 = vmap(vmap(self.problem.q1, in_axes=(None, 0)), in_axes=(0, None))  # (N,d) -> (N,)
+        self._vm_grad_q1 = vmap(vmap(grad(self.problem.q1, argnums=1), in_axes=(None, 0)), in_axes=(0, None))      # (N,d) -> (N,d)
 
         if self.problem.q2 is None and self.problem.gradx_q2 is None:
             gx = lambda x, y: 0 * x
@@ -83,7 +106,7 @@ class MFLD:
         return term1_mean + term2 + term3
 
     
-    @partial(jit, static_argnums=0)
+    # @partial(jit, static_argnums=0)
     def _step(self, carry, _):
         x, key = carry
         thinned_x = self.thin_fn(x)
@@ -103,13 +126,14 @@ class MFLD:
             W1_0, b1_0, W2_0, b2_0 = initialize(key, self.problem.data_d, d_hidden=self.cfg.N, d_out=1)
             x0 = jnp.concatenate([W1_0.T, b1_0[:, None], W2_0, b2_0[:, None]], axis=1)  # (N, d)
 
-        scan_fn = scan_tqdm(self.cfg.steps)(self._step)
-        (xT, _), path = lax.scan(scan_fn, (x0, key), jnp.arange(self.cfg.steps))
+        x = x0
+        path = []
+        for t in tqdm(range(self.cfg.steps)):
+            key_, subkey = random.split(key)
+            (x, key) , _ = self._step((x, subkey), t)
+            path.append(x)
 
-        if self.cfg.return_path:
-            # Include initial state for convenience
-            return jnp.concatenate([x0[None, ...], path], axis=0)  # (steps+1, N, d)
-        return xT
-
-
-
+        path = jnp.stack(path, axis=0)          # (steps, N, d)
+        path = jnp.concatenate([x0[None, ...], path], axis=0)  # (steps+1, N, d)
+    
+        return path
