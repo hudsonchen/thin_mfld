@@ -13,6 +13,7 @@ from utils.configs import CFG
 from utils.problems import Problem
 from jaxtyping import Array 
 from jax_tqdm import scan_tqdm
+from goodpoints.jax.compress import kt_compresspp
 
 
 def initialize(key, d_in, d_hidden, d_out):
@@ -42,12 +43,15 @@ def initialize(key, d_in, d_hidden, d_out):
 
 # ----------------------- Simulator class -----------------------
 class MFLD:
-    def __init__(self, cfg: CFG, problem: Problem):
+    def __init__(self, thinning, cfg: CFG, problem: Problem):
         self.cfg = cfg
         self.problem = problem
         self.data = problem.data
         self.counter = 0
-
+        if thinning :
+            self.thin_fn = lambda x: x[::self.cfg.thin_factor, ...]
+        else:
+            self.thin_fn = lambda x: x
         # Build vmapped helpers once (static w.r.t. self)
         self._vm_q1 = jax.vmap(jax.vmap(self.problem.q1, in_axes=(None, 0)), in_axes=(0, None))  # (N,d) -> (N,)
         self._vm_grad_q1 = jax.vmap(jax.vmap(grad(self.problem.q1, argnums=1), in_axes=(None, 0)), in_axes=(0, None))      # (N,d) -> (N,d)
@@ -63,12 +67,13 @@ class MFLD:
 
     # Treat `self` as static for JIT so the callables are constants.
     @partial(jit, static_argnums=0)
-    def vector_field(self, x: Array) -> Array:
+    def vector_field(self, x: Array, thinned_x: Array) -> Array:
         # First term: R1'(E[q1]) * ∇q1(x)
-        s = self._vm_q1(self.data["Z"][self.counter, ...], x) - self.data["y"][self.counter, ...][:, None]  # (n, N)
-        coeff = self.problem.R1_prime(s)            
-        term1 = coeff[:, :, None] * self._vm_grad_q1(self.data["Z"][self.counter, ...], x)       # (n, N, d)
-        term1_mean = jnp.mean(term1, axis=0)               # (N,d)
+        s = self._vm_q1(self.data["Z"][self.counter, ...], thinned_x) - self.data["y"][self.counter, ...][:, None]  # (n, N)
+        coeff = self.problem.R1_prime(s)   
+        term1_coeff = jnp.mean(coeff, axis=1)    # (n, )         
+        term1_vector = self._vm_grad_q1(self.data["Z"][self.counter, ...], x)       # (n, N, d)
+        term1_mean = (term1_coeff[:, None, None] * term1_vector).mean(0)  # (N,d)
 
         # Second term: mean over j of ∇_x q2(x_i, x_j)
         gx = self._all_pairs_gx(x)                   # (N,N,d)
@@ -81,7 +86,8 @@ class MFLD:
     @partial(jit, static_argnums=0)
     def _step(self, carry, _):
         x, key = carry
-        v = self.vector_field(x)
+        thinned_x = self.thin_fn(x)
+        v = self.vector_field(x, thinned_x)
         noise_scale = jnp.sqrt(2.0 * self.cfg.sigma * self.cfg.step_size)
         key, sub = random.split(key)
         noise = noise_scale * random.normal(sub, shape=x.shape)

@@ -35,6 +35,12 @@ def load_boston(batch_size, test_size=0.2, seed=42, standardize_X=True, standard
         y_tr = (y_tr - y_mean) / y_std
         y_te = (y_te - y_mean) / y_std
 
+    # Shuffle the training data before batching
+    key = jax.random.PRNGKey(seed)
+    perm = jax.random.permutation(key, X_tr.shape[0])
+    X_tr = X_tr[perm]
+    y_tr = y_tr[perm]
+
     # Batch them
     N = y_tr.shape[0]
     num_batches = (N + batch_size - 1) // batch_size

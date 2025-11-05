@@ -36,8 +36,8 @@ problem_nn = Problem(
 if __name__ == "__main__":
     # jax.config.update("jax_enable_x64", True)  # optional for stability
 
-    cfg = CFG(N=128, steps=50000, step_size=1.0, sigma=1.0, zeta=1e-2, seed=0, return_path=True)
-    sim = MFLD(cfg, problem_nn)
+    cfg = CFG(N=64, steps=50000, step_size=0.1, sigma=1.0, zeta=1e-2, seed=0, return_path=True)
+    sim = MFLD(thinning=False, cfg=cfg, problem=problem_nn)
     xT = sim.simulate()
 
     def compute_mse(Z, y, params):
