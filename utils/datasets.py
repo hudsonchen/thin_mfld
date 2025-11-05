@@ -6,7 +6,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-def load_boston(test_size=0.2, seed=42, standardize_X=True, standardize_y=False):
+def load_boston(batch_size, test_size=0.2, seed=42, standardize_X=True, standardize_y=False):
     """
     Returns JAX arrays and (optionally) standardization stats.
     Shapes:
@@ -35,6 +35,16 @@ def load_boston(test_size=0.2, seed=42, standardize_X=True, standardize_y=False)
         y_tr = (y_tr - y_mean) / y_std
         y_te = (y_te - y_mean) / y_std
 
+    # Batch them
+    N = y_tr.shape[0]
+    num_batches = (N + batch_size - 1) // batch_size
+    pad = num_batches * batch_size - N
+    if pad > 0:
+        y_tr = jnp.pad(y_tr, ((0, pad), (0,0)), mode='edge')
+        X_tr = jnp.pad(X_tr, ((0, pad), (0,0)), mode='edge')
+    y_tr = y_tr.reshape(num_batches, batch_size, *y_tr.shape[1:])
+    X_tr = X_tr.reshape(num_batches, batch_size, *X_tr.shape[1:])
+
     # Convert to JAX arrays (targets flattened to shape (N,))
     out = {
         "Z": jnp.asarray(X_tr),
@@ -43,6 +53,7 @@ def load_boston(test_size=0.2, seed=42, standardize_X=True, standardize_y=False)
         "y_test":  jnp.asarray(y_te.squeeze(-1)),
         "z_stats": (jnp.asarray(x_mean.squeeze(0)), jnp.asarray(x_std.squeeze(0))),
         "y_stats": (jnp.asarray(y_mean.item()),     jnp.asarray(y_std.item())),
+        "batch_size": batch_size
     }
     return out
 

@@ -14,6 +14,7 @@ class CFG:
     steps: int = 5000
     step_size: float = 1e-3
     sigma: float = 1.0
+    zeta : float = 1e-2
     seed: int = 0
     # Return full trajectory if True (memory heavy): (steps+1, N, d)
     return_path: bool = False
