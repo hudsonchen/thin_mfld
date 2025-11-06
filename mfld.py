@@ -23,27 +23,18 @@ from goodpoints import compress
 from goodpoints.jax.sliceable_points import SliceablePoints
 
 
+def glorot_normal(key, fan_in, fan_out):
+    std = jnp.sqrt(2.0 / (fan_in + fan_out))
+    return std * jax.random.normal(key, (fan_in, fan_out))
+
 def initialize(key, d_in, d_hidden, d_out):
     """PyTorch-like initialization for a 2-layer tanh MLP."""
     k1, k2 = random.split(key)
     k3, k4 = random.split(k2)
-
-    # Layer 1: Linear(d_in, d_hidden)
-    # bound1 = jnp.sqrt(1.0 / d_in)
-    bound1 = 1
-    # W1 = random.uniform(k1, (d_in, d_hidden), minval=-bound1, maxval=bound1)
-    W1 = random.normal(k1, (d_in, d_hidden)) * bound1
-    # b1 = jnp.zeros((d_hidden,))
-    b1 = random.normal(k2, (d_hidden,)) * bound1
-
-    # Layer 2: Linear(d_hidden, d_out)
-    # bound2 = jnp.sqrt(1.0 / d_hidden)
-    bound2 = 1
-    # W2 = random.uniform(k2, (d_hidden, d_out), minval=-bound2, maxval=bound2)
-    W2 = random.normal(k3, (d_hidden, d_out)) * bound2
-    # b2 = jnp.zeros((d_out,))
-    b2 = random.normal(k4, (d_hidden, )) * bound2
-    return W1, b1, W2, b2
+    W1 = glorot_normal(k1, d_in, d_hidden)
+    b1 = jnp.zeros((d_hidden,))
+    W2 = glorot_normal(k3, d_hidden, d_out)
+    return W1, b1, W2
 
 
 
@@ -56,8 +47,6 @@ def uncentered_matern_32_kernel(points_x, points_y, l):
     return (1.0 + sqrt3_r) * jnp.exp(-sqrt3_r)   # (N_x, N_y)
 
 
-
-# ----------------------- Simulator class -----------------------
 class MFLD:
     def __init__(self, thinning, cfg: CFG, problem: Problem):
         self.cfg = cfg
@@ -65,11 +54,22 @@ class MFLD:
         self.data = problem.data
         self.counter = 0
         self.seed = cfg.seed
+        self.kernel_type = cfg.kernel
+        if self.kernel_type == "sobolev":
+            k_params = np.array([1.0]) 
+        elif self.kernel_type == "gaussian":
+            k_params = np.array([1.0])
+        else:
+            raise ValueError(f"Unknown kernel type: {self.kernel_type}")
+
+
         # np.random.seed(self.seed)
 
         if thinning == 'kt':
-            kernel_fn = partial(uncentered_matern_32_kernel, l=float(1.0))
-            rng = np.random.default_rng(self.seed)
+            # This is the jax version of kt_compresspp, which is very slow.
+            #
+            # kernel_fn = partial(uncentered_matern_32_kernel, l=float(1.0))
+            # rng = np.random.default_rng(self.seed)
             # def thin_fn(x):
             #     points = SliceablePoints({"X": x})  
             #     coresets = kt_compresspp(kernel_fn, points, w=jnp.ones(self.cfg.N) / self.cfg.N, 
@@ -77,7 +77,7 @@ class MFLD:
             #     return x[coresets, :]
             def thin_fn(x):
                 x_cpu = np.array(np.asarray(x))
-                coresets = compress.compresspp_kt(x_cpu, kernel_type=b"gaussian", k_params=np.ones(1), seed=self.seed, g=0)
+                coresets = compress.compresspp_kt(x_cpu, kernel_type=self.kernel_type.encode("utf-8"), k_params=k_params, seed=self.seed, g=0)
                 return jax.device_put(x_cpu[coresets, :])
             self.thin_fn = thin_fn
         elif thinning == 'random':
@@ -134,7 +134,7 @@ class MFLD:
         noise_scale = jnp.sqrt(2.0 * self.cfg.sigma * self.cfg.step_size)
         key, sub = random.split(key)
         noise = noise_scale * random.normal(sub, shape=x.shape)
-        x_next = x - self.cfg.step_size * v + noise
+        x_next = x - self.cfg.step_size * self.cfg.N * v + noise
         self.counter = (self.counter + 1) % self.data["batch_size"]
         return (x_next, mmd2, key), x_next
 
@@ -142,9 +142,9 @@ class MFLD:
         key = random.PRNGKey(self.cfg.seed)
         if x0 is None:
             key, sub = random.split(key)
-            x0 = 0.5 * random.normal(sub, (self.cfg.N, self.problem.particle_d)) * 0.1
-            # W1_0, b1_0, W2_0, b2_0 = initialize(key, self.problem.data_d, d_hidden=self.cfg.N, d_out=1)
-            # x0 = jnp.concatenate([W1_0.T, b1_0[:, None], W2_0, b2_0[:, None]], axis=1)  # (N, d)
+            # x0 = 0.5 * random.normal(sub, (self.cfg.N, self.problem.particle_d)) * 0.1
+            W1_0, b1_0, W2_0 = initialize(key, self.problem.data_d, d_hidden=self.cfg.N, d_out=1)
+            x0 = jnp.concatenate([W1_0.T, b1_0[:, None], W2_0], axis=1)  # (N, d)
 
         x = x0
         path = []

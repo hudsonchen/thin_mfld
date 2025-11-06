@@ -16,7 +16,7 @@ def get_config():
 
     # Args settings
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--kernel', type=str, default='Matern')
+    parser.add_argument('--kernel', type=str, default='sobolev')
     parser.add_argument('--step_size', type=float, default=0.1)
     parser.add_argument('--noise_scale', type=float, default=0.1)
     parser.add_argument('--bandwidth', type=float, default=1.0)
@@ -30,7 +30,7 @@ def get_config():
 def create_dir(args):
     if args.seed is None:
         args.seed = int(time.time())
-    args.save_path += f"neural_network/uci/matern_kernel/"
+    args.save_path += f"neural_network/uci/{args.kernel}_kernel/"
     args.save_path += f"__thinning_{args.thinning}__step_size_{args.step_size}__bandwidth_{args.bandwidth}__step_num_{args.step_num}"
     args.save_path += f"__particle_num_{args.particle_num}__noise_scale_{args.noise_scale}"
     args.save_path += f"__seed_{args.seed}"
@@ -68,7 +68,7 @@ problem_nn = Problem(
 
 def main(args):
     cfg = CFG(N=args.particle_num, steps=args.step_num, step_size=args.step_size, sigma=args.noise_scale, 
-              zeta=1e-3, seed=args.seed, return_path=True)
+              zeta=0.0, seed=args.seed, return_path=True)
     sim = MFLD(thinning=args.thinning, cfg=cfg, problem=problem_nn)
     xT, mmd_path = sim.simulate()
 
@@ -103,6 +103,10 @@ def main(args):
     print("Final Test MSE:", test_losses[-1])
 
     jnp.save(f'{args.save_path}/trajectory.npy', xT_subsampled)
+    jnp.save(f'{args.save_path}/mmd_path.npy', mmd_path)
+    jnp.save(f'{args.save_path}/train_losses.npy', train_losses)
+    jnp.save(f'{args.save_path}/test_losses.npy', test_losses)
+
     # ---- Plot ----
     import matplotlib.pyplot as plt
 
