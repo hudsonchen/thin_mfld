@@ -1,0 +1,6 @@
+/.vscode/
+/__pycache__/
+/results/
+/plotting_notebooks
+/debugging_notebooks
+/utils/__pycache__/
