@@ -30,8 +30,8 @@ def get_config():
 def create_dir(args):
     if args.seed is None:
         args.seed = int(time.time())
-    args.save_path += f"neural_network/uci/{args.kernel}_kernel/"
-    args.save_path += f"__thinning_{args.thinning}__step_size_{args.step_size}__bandwidth_{args.bandwidth}__step_num_{args.step_num}"
+    args.save_path += f"neural_network/thinning_{args.thinning}/"
+    args.save_path += f"kernel_{args.kernel}__step_size_{args.step_size}__bandwidth_{args.bandwidth}__step_num_{args.step_num}"
     args.save_path += f"__particle_num_{args.particle_num}__noise_scale_{args.noise_scale}"
     args.save_path += f"__seed_{args.seed}"
     os.makedirs(args.save_path, exist_ok=True)
@@ -67,15 +67,15 @@ problem_nn = Problem(
 
 
 def main(args):
-    cfg = CFG(N=args.particle_num, steps=args.step_num, step_size=args.step_size, sigma=args.noise_scale, 
-              zeta=0.0, seed=args.seed, return_path=True)
+    cfg = CFG(N=args.particle_num, steps=args.step_num, step_size=args.step_size, sigma=args.noise_scale, kernel=args.kernel,
+              zeta=0.0, seed=args.seed, bandwidth=args.bandwidth, return_path=True)
     sim = MFLD(thinning=args.thinning, cfg=cfg, problem=problem_nn)
     xT, mmd_path = sim.simulate()
 
     def compute_mse(Z, y, params):
         """Compute MSE for a given parameter vector `params`."""
         preds_all = jax.vmap(q1_nn, in_axes=(None, 0))(Z, params)
-        preds = preds_all.mean(axis=0)
+        preds = preds_all.sum(axis=0)
         return jnp.mean((preds - y) ** 2)
 
     # Plotting code
@@ -95,9 +95,9 @@ def main(args):
     train_losses = jnp.array(train_losses)
     test_losses = jnp.array(test_losses)
 
-    print("Final Train pred:", jax.vmap(q1_nn, in_axes=(None, 0))(data["Z"][0, ...], xT_subsampled[-1]).mean(axis=0)[:10])
+    print("Final Train pred:", jax.vmap(q1_nn, in_axes=(None, 0))(data["Z"][0, ...], xT_subsampled[-1]).sum(axis=0)[:10])
     print("Final Train label:", data["y"][0, ...][:10])
-    print("Final Test pred:", jax.vmap(q1_nn, in_axes=(None, 0))(data["Z_test"], xT_subsampled[-1]).mean(axis=0)[:10])
+    print("Final Test pred:", jax.vmap(q1_nn, in_axes=(None, 0))(data["Z_test"], xT_subsampled[-1]).sum(axis=0)[:10])
     print("Final Test label:", data["y_test"][:10])
     print("Final Train MSE:", train_losses[-1])
     print("Final Test MSE:", test_losses[-1])

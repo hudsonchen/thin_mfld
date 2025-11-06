@@ -18,7 +18,7 @@ from jaxtyping import Array
 from jax_tqdm import scan_tqdm
 # from utils.kt import kt_compresspp
 from tqdm import tqdm
-# from goodpoints.jax.compress import kt_compresspp
+from goodpoints.jax.compress import kt_compresspp
 from goodpoints import compress
 from goodpoints.jax.sliceable_points import SliceablePoints
 
@@ -56,9 +56,9 @@ class MFLD:
         self.seed = cfg.seed
         self.kernel_type = cfg.kernel
         if self.kernel_type == "sobolev":
-            k_params = np.array([1.0]) 
+            k_params = np.array([1.0, 2.0, 3.0]) 
         elif self.kernel_type == "gaussian":
-            k_params = np.array([1.0])
+            k_params = np.array([self.cfg.bandwidth])
         else:
             raise ValueError(f"Unknown kernel type: {self.kernel_type}")
 
@@ -68,17 +68,18 @@ class MFLD:
         if thinning == 'kt':
             # This is the jax version of kt_compresspp, which is very slow.
             #
-            # kernel_fn = partial(uncentered_matern_32_kernel, l=float(1.0))
-            # rng = np.random.default_rng(self.seed)
-            # def thin_fn(x):
-            #     points = SliceablePoints({"X": x})  
-            #     coresets = kt_compresspp(kernel_fn, points, w=jnp.ones(self.cfg.N) / self.cfg.N, 
-            #                  rng_gen=rng, inflate_size=int(256), g=0, delta=0.5)
-            #     return x[coresets, :]
+            kernel_fn = partial(uncentered_matern_32_kernel, l=float(1.0))
+            rng = np.random.default_rng(self.seed)
             def thin_fn(x):
-                x_cpu = np.array(np.asarray(x))
-                coresets = compress.compresspp_kt(x_cpu, kernel_type=self.kernel_type.encode("utf-8"), k_params=k_params, seed=self.seed, g=0)
-                return jax.device_put(x_cpu[coresets, :])
+                points = SliceablePoints({"X": x})  
+                coresets = kt_compresspp(kernel_fn, points, w=jnp.ones(self.cfg.N) / self.cfg.N, 
+                             rng_gen=rng, inflate_size=int(self.cfg.N), g=0, delta=0.5)
+                return x[coresets, :]
+            # This is the cython version which is fast
+            # def thin_fn(x):
+            #     x_cpu = np.array(np.asarray(x))
+            #     coresets = compress.compresspp_kt(x_cpu, kernel_type=self.kernel_type.encode("utf-8"), k_params=k_params, seed=self.seed, g=0)
+            #     return jax.device_put(x_cpu[coresets, :])
             self.thin_fn = thin_fn
         elif thinning == 'random':
             def thin_fn(x):
@@ -107,11 +108,12 @@ class MFLD:
     @partial(jit, static_argnums=0)
     def vector_field(self, x: Array, thinned_x: Array) -> Array:
         # First term: R1'(E[q1]) * ∇q1(x)
-        s = self._vm_q1(self.data["Z"][self.counter, ...], thinned_x) - self.data["y"][self.counter, ...][:, None]  # (n, N)
+        # s = self._vm_q1(self.data["Z"][self.counter, ...], thinned_x) - self.data["y"][self.counter, ...][:, None]  # (n, N)
+        s = self._vm_q1(self.data["Z"][self.counter, ...], thinned_x).sum(1) * (x.shape[0] / thinned_x.shape[0]) - self.data["y"][self.counter, ...]  # (n, )
         coeff = self.problem.R1_prime(s)   
-        term1_coeff = jnp.mean(coeff, axis=1)    # (n, )         
+        # term1_coeff = jnp.mean(coeff, axis=1)    # (n, )         
         term1_vector = self._vm_grad_q1(self.data["Z"][self.counter, ...], x)       # (n, N, d)
-        term1_mean = (term1_coeff[:, None, None] * term1_vector).mean(0)  # (N,d)
+        term1_mean = (coeff[:, None, None] * term1_vector).mean(0)  # (N,d)
 
         # Second term: mean over j of ∇_x q2(x_i, x_j)
         gx = self._all_pairs_gx(x)                   # (N,N,d)
@@ -134,7 +136,7 @@ class MFLD:
         noise_scale = jnp.sqrt(2.0 * self.cfg.sigma * self.cfg.step_size)
         key, sub = random.split(key)
         noise = noise_scale * random.normal(sub, shape=x.shape)
-        x_next = x - self.cfg.step_size * self.cfg.N * v + noise
+        x_next = x - self.cfg.step_size * v + noise
         self.counter = (self.counter + 1) % self.data["batch_size"]
         return (x_next, mmd2, key), x_next
 

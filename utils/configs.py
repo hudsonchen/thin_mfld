@@ -17,6 +17,7 @@ class CFG:
     zeta : float = 1e-2
     seed: int = 0
     kernel: str = "sobolev"  # "sobolev" or "gaussian"
+    bandwidth: float = 1.0  # for Gaussian kernel
     # Return full trajectory if True (memory heavy): (steps+1, N, d)
     return_path: bool = False
 
