@@ -49,10 +49,10 @@ def q1_nn(z, x):
     d_hidden = x.shape[0] - 2
     W1, b1, W2 = x[:d_hidden], x[d_hidden+1], x[d_hidden+2]
     h = jnp.tanh(z @ W1 + b1)
-    return jnp.dot(W2, h)
+    return jnp.dot(jnp.tanh(W2), h)
 
 
-data = load_boston(batch_size=64, standardize_X=True, standardize_y=False)
+data = load_boston(batch_size=64, standardize_X=True, standardize_y=True)
 
 
 problem_nn = Problem(
@@ -68,9 +68,9 @@ problem_nn = Problem(
 
 def main(args):
     cfg = CFG(N=args.particle_num, steps=args.step_num, step_size=args.step_size, sigma=args.noise_scale, kernel=args.kernel,
-              zeta=0.0, seed=args.seed, bandwidth=args.bandwidth, return_path=True)
+              zeta=1e-4, seed=args.seed, bandwidth=args.bandwidth, return_path=True)
     sim = MFLD(thinning=args.thinning, cfg=cfg, problem=problem_nn)
-    xT, mmd_path = sim.simulate()
+    xT, mmd_path, thin_original_mse_path = sim.simulate()
 
     def compute_mse(Z, y, params):
         """Compute MSE for a given parameter vector `params`."""
@@ -104,13 +104,14 @@ def main(args):
 
     jnp.save(f'{args.save_path}/trajectory.npy', xT_subsampled)
     jnp.save(f'{args.save_path}/mmd_path.npy', mmd_path)
+    jnp.save(f'{args.save_path}/thin_original_mse_path.npy', thin_original_mse_path)
     jnp.save(f'{args.save_path}/train_losses.npy', train_losses)
     jnp.save(f'{args.save_path}/test_losses.npy', test_losses)
 
     # ---- Plot ----
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
     # --- (1) Training and test losses ---
     axes[0].plot(train_losses, label="Train MSE")
@@ -128,6 +129,14 @@ def main(args):
     axes[1].set_yscale("log")
     axes[1].grid(True, linestyle="--", alpha=0.5)
 
+    # --- (3) Thinned vs Original MSE path ---
+    axes[2].plot(thin_original_mse_path, color="C3", label="Thin-Original MSE")
+    axes[2].set_xlabel("Training Step")
+    axes[2].set_ylabel("MSE")
+    axes[2].set_title("Thinned vs Original Output MSE")
+    axes[2].legend()
+    axes[2].set_yscale("log")
+    axes[2].grid(True, linestyle="--", alpha=0.5)
     # --- Layout and save ---
     plt.tight_layout()
     plt.savefig(f"{args.save_path}/mfld_boston_nn_loss_mmd.png", dpi=300)

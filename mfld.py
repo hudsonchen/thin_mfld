@@ -68,18 +68,19 @@ class MFLD:
         if thinning == 'kt':
             # This is the jax version of kt_compresspp, which is very slow.
             #
-            kernel_fn = partial(uncentered_matern_32_kernel, l=float(1.0))
-            rng = np.random.default_rng(self.seed)
-            def thin_fn(x):
-                points = SliceablePoints({"X": x})  
-                coresets = kt_compresspp(kernel_fn, points, w=jnp.ones(self.cfg.N) / self.cfg.N, 
-                             rng_gen=rng, inflate_size=int(self.cfg.N), g=0, delta=0.5)
-                return x[coresets, :]
-            # This is the cython version which is fast
+            # kernel_fn = partial(uncentered_matern_32_kernel, l=float(1.0))
+            # rng = np.random.default_rng(self.seed)
             # def thin_fn(x):
-            #     x_cpu = np.array(np.asarray(x))
-            #     coresets = compress.compresspp_kt(x_cpu, kernel_type=self.kernel_type.encode("utf-8"), k_params=k_params, seed=self.seed, g=0)
-            #     return jax.device_put(x_cpu[coresets, :])
+            #     points = SliceablePoints({"X": x})  
+            #     coresets = kt_compresspp(kernel_fn, points, w=jnp.ones(self.cfg.N) / self.cfg.N, 
+            #                  rng_gen=rng, inflate_size=int(self.cfg.N), g=0, delta=0.5)
+            #     return x[coresets, :]
+
+            # This is the cython version which is fast
+            def thin_fn(x):
+                x_cpu = np.array(np.asarray(x))
+                coresets = compress.compresspp_kt(x_cpu, kernel_type=self.kernel_type.encode("utf-8"), k_params=k_params, seed=self.seed, g=0)
+                return jax.device_put(x_cpu[coresets, :])
             self.thin_fn = thin_fn
         elif thinning == 'random':
             def thin_fn(x):
@@ -129,7 +130,15 @@ class MFLD:
         thinned_x = self.thin_fn(x)
 
         # Debug code compare MMD between x and thinned_x 
-        mmd2 = compute_mmd2(x, thinned_x, bandwidth=1.0)
+        if self.counter == 0:
+            mmd2 = compute_mmd2(x, thinned_x, bandwidth=1.0)
+            
+            thinned_output = self._vm_q1(self.data["Z"][self.counter, ...], thinned_x).sum(1) * (x.shape[0] / thinned_x.shape[0])
+            original_output = self._vm_q1(self.data["Z"][self.counter, ...], x).sum(1)
+            thin_original_mse = jnp.mean((thinned_output - original_output)**2)
+        else:
+            mmd2 = 0.0
+            thin_original_mse = 0.0
         ###########################################
 
         v = self.vector_field(x, thinned_x)
@@ -138,7 +147,7 @@ class MFLD:
         noise = noise_scale * random.normal(sub, shape=x.shape)
         x_next = x - self.cfg.step_size * v + noise
         self.counter = (self.counter + 1) % self.data["batch_size"]
-        return (x_next, mmd2, key), x_next
+        return (x_next, mmd2, thin_original_mse, key), x_next
 
     def simulate(self, x0: Optional[Array] = None) -> Array:
         key = random.PRNGKey(self.cfg.seed)
@@ -151,13 +160,16 @@ class MFLD:
         x = x0
         path = []
         mmd_path = []
+        thin_original_mse_path = []
         for t in tqdm(range(self.cfg.steps)):
             key_, subkey = random.split(key)
-            (x, mmd2, key) , _ = self._step((x, subkey), t)
+            (x, mmd2, thin_original_mse, key) , _ = self._step((x, subkey), t)
             path.append(x)
             mmd_path.append(mmd2)
+            thin_original_mse_path.append(thin_original_mse)
 
         path = jnp.stack(path, axis=0)          # (steps, N, d)
         mmd_path = jnp.stack(mmd_path, axis=0)  # (steps, )
+        thin_original_mse_path = jnp.stack(thin_original_mse_path, axis=0)  # (steps, )
 
-        return path, mmd_path
+        return path, mmd_path, thin_original_mse_path

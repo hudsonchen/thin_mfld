@@ -29,11 +29,11 @@ def load_boston(batch_size, test_size=0.2, seed=42, standardize_X=True, standard
         X_tr = (X_tr - x_mean) / x_std
         X_te = (X_te - x_mean) / x_std
 
-    y_mean = y_tr.mean(axis=0, keepdims=True)
-    y_std  = y_tr.std(axis=0, keepdims=True) + 1e-8
+    y_min = y_tr.min(axis=0, keepdims=True)
+    y_max = y_tr.max(axis=0, keepdims=True)
     if standardize_y:
-        y_tr = (y_tr - y_mean) / y_std
-        y_te = (y_te - y_mean) / y_std
+        y_tr = 2 * (y_tr - y_min) / (y_max - y_min + 1e-8) - 1
+        y_te = 2 * (y_te - y_min) / (y_max - y_min + 1e-8) - 1
 
     # Shuffle the training data before batching
     key = jax.random.PRNGKey(seed)
@@ -58,7 +58,7 @@ def load_boston(batch_size, test_size=0.2, seed=42, standardize_X=True, standard
         "Z_test":  jnp.asarray(X_te),
         "y_test":  jnp.asarray(y_te.squeeze(-1)),
         "z_stats": (jnp.asarray(x_mean.squeeze(0)), jnp.asarray(x_std.squeeze(0))),
-        "y_stats": (jnp.asarray(y_mean.item()),     jnp.asarray(y_std.item())),
+        "y_stats": (jnp.asarray(y_min.item()),     jnp.asarray(y_max.item())),
         "batch_size": batch_size
     }
     return out
