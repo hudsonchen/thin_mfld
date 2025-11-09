@@ -1,7 +1,8 @@
 # pip install scikit-learn
 from sklearn.datasets import fetch_openml
+from sklearn.datasets import fetch_covtype
 from sklearn.model_selection import train_test_split
-
+from sklearn.preprocessing import StandardScaler
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -10,7 +11,7 @@ def load_boston(batch_size, test_size=0.2, seed=42, standardize_X=True, standard
     """
     Returns JAX arrays and (optionally) standardization stats.
     Shapes:
-      X_*: (N, 13), y_*: (N,)  # regression target
+      X_*: (N, 13), y_*: (N, 1)  # regression target
     """
     # Load from OpenML (since sklearn.load_boston is deprecated)
     ds = fetch_openml(name="boston", version=1, as_frame=True)
@@ -63,19 +64,97 @@ def load_boston(batch_size, test_size=0.2, seed=42, standardize_X=True, standard
     }
     return out
 
-def batch_iter(X, y, batch_size, rng):
+def load_covertype(batch_size, test_size=0.2, seed=42,
+                   standardize_X=True, one_hot_y=False):
     """
-    JAX-friendly shuffling batch iterator.
-    rng: jax.random.PRNGKey
+    Returns batched JAX arrays for UCI Covertype classification.
+    Shapes:
+      X: (num_batches, batch_size, 54)
+      y: (num_batches, batch_size,) or one-hot
+      X_test: (N_test, 54)
+      y_test: same
     """
-    n = X.shape[0]
-    idx = jax.random.permutation(rng, n)
-    for start in range(0, n, batch_size):
-        sl = idx[start:start + batch_size]
-        yield X[sl], y[sl]
+    
+    # ---- Load dataset ----
+    ds = fetch_covtype(as_frame=False)
+    X = ds.data.astype(np.float32)
+    y = (ds.target - 1).astype(np.int32)  # convert to {0,...,6}
 
-# ---- Example usage ----
-# data = load_boston_jax(standardize_X=True, standardize_y=False)
-# rng = jax.random.PRNGKey(0)
-# for xb, yb in batch_iter(data["X_train"], data["y_train"], batch_size=64, rng=rng):
-#     ...  # train step
+    # ---- Train/test split ----
+    X_tr, X_te, y_tr, y_te = train_test_split(
+        X, y, test_size=test_size, random_state=seed, stratify=y
+    )
+
+    # ---- Standardization ----
+    if standardize_X:
+        scaler = StandardScaler()
+        X_tr = scaler.fit_transform(X_tr).astype(np.float32)
+        X_te = scaler.transform(X_te).astype(np.float32)
+        x_mean = scaler.mean_.astype(np.float32)
+        x_std  = scaler.scale_.astype(np.float32)
+    else:
+        x_mean = X_tr.mean(axis=0).astype(np.float32)
+        x_std  = X_tr.std(axis=0).astype(np.float32) + 1e-8
+
+    # ---- One-hot encoding (optional) ----
+    if one_hot_y:
+        num_classes = 7
+        y_tr_oh = np.eye(num_classes)[y_tr]
+        y_te_oh = np.eye(num_classes)[y_te]
+
+        y_tr = y_tr_oh.astype(np.float32)
+        y_te = y_te_oh.astype(np.float32)
+
+    # ---- Shuffle training set ----
+    key = jax.random.PRNGKey(seed)
+    perm = jax.random.permutation(key, X_tr.shape[0])
+    X_tr = X_tr[perm]
+    y_tr = y_tr[perm]
+
+    # ---- Batch + pad ----
+    N_train = X_tr.shape[0]
+    N_test = X_te.shape[0]
+    num_batches_tr = (N_train + batch_size - 1) // batch_size
+    num_batches_te = (N_test + batch_size - 1) // batch_size
+    pad_tr = num_batches_tr * batch_size - N_train
+    pad_te = num_batches_te * batch_size - N_test
+    if pad_tr > 0:
+        X_tr = jnp.pad(X_tr, ((0, pad_tr), (0, 0)), mode='edge')
+        if one_hot_y:
+            y_tr = jnp.pad(y_tr, ((0, pad_tr), (0, 0)), mode='edge')
+        else:
+            y_tr = jnp.pad(y_tr, ((0, pad_tr),), mode='edge')
+
+    X_tr = X_tr.reshape(num_batches_tr, batch_size, -1)
+    if one_hot_y:
+        y_tr = y_tr.reshape(num_batches_tr, batch_size, -1)
+    else:
+        y_tr = y_tr.reshape(num_batches_tr, batch_size)
+
+    if pad_te > 0:
+        X_te = jnp.pad(X_te, ((0, pad_te), (0, 0)), mode='edge')
+        if one_hot_y:
+            y_te = jnp.pad(y_te, ((0, pad_te), (0, 0)), mode='edge')
+        else:
+            y_te = jnp.pad(y_te, ((0, pad_te),), mode='edge')
+    X_te = X_te.reshape(num_batches_te, batch_size, -1)
+    if one_hot_y:
+        y_te = y_te.reshape(num_batches_te, batch_size, -1)
+    else:
+        y_te = y_te.reshape(num_batches_te, batch_size)
+
+    # ---- Convert to JAX arrays ----
+    out = {
+        "Z": jnp.asarray(X_tr),
+        "y": jnp.asarray(y_tr),
+        "Z_test": jnp.asarray(X_te),
+        "y_test": jnp.asarray(y_te),
+        "z_stats": (jnp.asarray(x_mean), jnp.asarray(x_std)),
+        "num_classes": 7,
+        "batch_size": batch_size,
+        "num_batches_tr": num_batches_tr,
+        "num_batches_te": num_batches_te,
+    }
+
+    return out
+

@@ -1,7 +1,7 @@
 from utils.configs import CFG
 from utils.problems import Problem
 from mfld import MFLD
-from utils.datasets import load_boston
+from utils.datasets import load_boston, load_covertype
 import jax.numpy as jnp
 import jax
 from tqdm import tqdm
@@ -11,6 +11,10 @@ import os
 import argparse
 import pickle
 
+# from jax import config
+# config.update("jax_disable_jit", True)
+
+
 def get_config():
     parser = argparse.ArgumentParser(description='mmd_flow_cubature')
 
@@ -18,6 +22,8 @@ def get_config():
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--kernel', type=str, default='sobolev')
     parser.add_argument('--step_size', type=float, default=0.1)
+    parser.add_argument('--dataset', type=str, default='boston')
+    parser.add_argument('--g', type=int, default=0)
     parser.add_argument('--noise_scale', type=float, default=0.1)
     parser.add_argument('--bandwidth', type=float, default=1.0)
     parser.add_argument('--step_num', type=int, default=100)
@@ -30,75 +36,101 @@ def get_config():
 def create_dir(args):
     if args.seed is None:
         args.seed = int(time.time())
-    args.save_path += f"neural_network/thinning_{args.thinning}/"
+    args.save_path += f"neural_network_{args.dataset}/thinning_{args.thinning}/"
     args.save_path += f"kernel_{args.kernel}__step_size_{args.step_size}__bandwidth_{args.bandwidth}__step_num_{args.step_num}"
-    args.save_path += f"__particle_num_{args.particle_num}__noise_scale_{args.noise_scale}"
+    args.save_path += f"__g_{args.g}__particle_num_{args.particle_num}__noise_scale_{args.noise_scale}"
     args.save_path += f"__seed_{args.seed}"
     os.makedirs(args.save_path, exist_ok=True)
     with open(f'{args.save_path}/configs', 'wb') as handle:
         pickle.dump(vars(args), handle, protocol=pickle.HIGHEST_PROTOCOL)
     return args
 
-
-
-def R1_prime(s):  # R1(s)=0.5*s^2
-    return s
-
-def q1_nn(z, x):
-    # Simple 2-layer NN for demonstration
-    d_hidden = x.shape[0] - 2
-    W1, b1, W2 = x[:d_hidden], x[d_hidden+1], x[d_hidden+2]
-    h = jnp.tanh(z @ W1 + b1)
-    return jnp.dot(jnp.tanh(W2), h)
-
-
-data = load_boston(batch_size=64, standardize_X=True, standardize_y=True)
-
-
-problem_nn = Problem(
-    particle_d=data["Z"].shape[-1] + 2,  # NN params dimension
-    data_d=data["Z"].shape[-1],
-    R1_prime=R1_prime,
-    q1=q1_nn,
-    q2=None,
-    gradx_q2=None,
-    data=data
-)
-
-
 def main(args):
-    cfg = CFG(N=args.particle_num, steps=args.step_num, step_size=args.step_size, sigma=args.noise_scale, kernel=args.kernel,
-              zeta=1e-4, seed=args.seed, bandwidth=args.bandwidth, return_path=True)
-    sim = MFLD(thinning=args.thinning, cfg=cfg, problem=problem_nn)
-    xT, mmd_path, thin_original_mse_path = sim.simulate()
+    if args.dataset == 'boston':
+        def R1_prime(hat_y, y):  # R1(s)=0.5*s^2
+            return hat_y - y
 
-    def compute_mse(Z, y, params):
-        """Compute MSE for a given parameter vector `params`."""
-        preds_all = jax.vmap(q1_nn, in_axes=(None, 0))(Z, params)
-        preds = preds_all.sum(axis=0)
-        return jnp.mean((preds - y) ** 2)
+        def q1_nn(z, x):
+            d_hidden = z.shape[-1]
+            W1, b1, W2 = x[:d_hidden], x[d_hidden+1], x[d_hidden+2][:, None]
+            h = jnp.tanh(z @ W1 + b1)
+            return jnp.dot(jnp.tanh(W2), h)
+
+        data = load_boston(batch_size=64, standardize_X=True, standardize_y=True)
+
+        @jax.jit
+        def loss(Z, y, params):
+            """Compute MSE for a given parameter vector `params`."""
+            preds_all = jax.vmap(q1_nn, in_axes=(None, 0))(Z, params)
+            preds = preds_all.mean(axis=0)
+            return jnp.mean((preds - y) ** 2)
+        
+    elif args.dataset == 'covertype':
+
+        def R1_prime(hat_y, y):  # R1(s)=0.5*s^2
+            return - y / (hat_y + 1e-8)
+
+        def q1_nn(z, x):
+            d_hidden = z.shape[-1]
+            W1, b1, W2 = x[:d_hidden], x[d_hidden+1], x[d_hidden+1:]
+            h = jnp.tanh(z @ W1 + b1) 
+            logits = jnp.dot(W2, h)
+            return jax.nn.softmax(logits)
+
+        data = load_covertype(batch_size=128, standardize_X=True, one_hot_y=True)
+
+        @jax.jit
+        def loss(Z, y, params):
+            """Compute Cross-Entropy Loss for a given parameter vector `params`."""
+            preds_all = jax.vmap(                       # over particles
+                    jax.vmap(q1_nn, in_axes=(0, None)),     # over batch
+                    in_axes=(None, 0)                          # Z[p], params[p]
+                )(Z, params)
+            preds = preds_all.mean(axis=0)  # (batch_size, num_classes)
+            return -jnp.mean(jnp.sum(y * jnp.log(preds + 1e-8), axis=1))
+    else:
+        raise ValueError(f"Unknown dataset: {args.dataset}")
+    
+    output_d = data["y"].shape[-1] if len(data["y"].shape) > 1 else 1
+    input_d = data["Z"].shape[-1]
+    problem_nn = Problem(
+        particle_d=data["Z"].shape[-1] + 1 + output_d,  # NN params dimension
+        input_d=input_d,
+        output_d=output_d,
+        R1_prime=R1_prime,
+        q1=q1_nn,
+        q2=None,
+        gradx_q2=None,
+        data=data
+    )
+
+    cfg = CFG(N=args.particle_num, steps=args.step_num, step_size=args.step_size, sigma=args.noise_scale, kernel=args.kernel,
+              zeta=1e-4, g=args.g, seed=args.seed, bandwidth=args.bandwidth, return_path=True)
+    sim = MFLD(save_freq=data["num_batches_tr"], thinning=args.thinning, cfg=cfg, problem=problem_nn)
+    xT, mmd_path, thin_original_mse_path = sim.simulate()
 
     # Plotting code
     T_plus_1, N, d = xT.shape
 
-    # vmap over particles
-    loss_fn = lambda p: (
-        compute_mse(data["Z"][0, ...], data["y"][0, ...], p),
-        compute_mse(data["Z_test"], data["y_test"], p)
-    )
-
-    xT_subsampled = xT[::100]  # Subsample for plotting
-    # train_losses, test_losses = jax.vmap(loss_fn)(xT_subsampled)
-    outs = lax.map(lambda p: jnp.array(loss_fn(p)), xT_subsampled)  # (N, 2)
-    train_losses, test_losses = outs[:, 0], outs[:, 1]
+    train_losses = []
+    test_losses = []
+    xT_subsampled = xT[::max(1, T_plus_1 // 100), ...] 
+    for p in tqdm(xT_subsampled):
+        tr_, te_ = 0.0, 0.0
+        for z_tr, y_tr in zip(data["Z"], data["y"]):
+            tr_ += loss(z_tr, y_tr, p)
+        for z_te, y_te in zip(data["Z_test"], data["y_test"]):
+            te_ += loss(z_te, y_te, p)
+        train_losses.append(float(tr_) / data["num_batches_tr"])
+        test_losses.append(float(te_) / data["num_batches_te"])
 
     train_losses = jnp.array(train_losses)
     test_losses = jnp.array(test_losses)
 
-    print("Final Train pred:", jax.vmap(q1_nn, in_axes=(None, 0))(data["Z"][0, ...], xT_subsampled[-1]).sum(axis=0)[:10])
-    print("Final Train label:", data["y"][0, ...][:10])
-    print("Final Test pred:", jax.vmap(q1_nn, in_axes=(None, 0))(data["Z_test"], xT_subsampled[-1]).sum(axis=0)[:10])
-    print("Final Test label:", data["y_test"][:10])
+    print("Final Train pred:", sim._vm_q1(data["Z"][0, ...], xT_subsampled[-1]).mean(axis=0)[:5])
+    print("Final Train label:", data["y"][0, ...][:5])
+    print("Final Test pred:", sim._vm_q1(data["Z_test"][0, ...], xT_subsampled[-1]).mean(axis=0)[:5])
+    print("Final Test label:", data["y_test"][0, ...][:5])
     print("Final Train MSE:", train_losses[-1])
     print("Final Test MSE:", test_losses[-1])
 

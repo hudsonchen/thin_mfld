@@ -10,7 +10,8 @@ from jaxtyping import Array
 class Problem:
     # R1' : R -> R
     particle_d: int
-    data_d: int
+    input_d: int
+    output_d: int
     R1_prime: Callable[[Array], Array]
     # q1 : R^d -> R
     q1: Callable[[Array], Array]

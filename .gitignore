@@ -1,6 +1,7 @@
 /.vscode/
 /__pycache__/
 /results/
+/results_old_mfld/
 /plotting_notebooks
 /debugging_notebooks
 /utils/__pycache__/
