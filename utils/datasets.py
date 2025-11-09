@@ -43,24 +43,35 @@ def load_boston(batch_size, test_size=0.2, seed=42, standardize_X=True, standard
     y_tr = y_tr[perm]
 
     # Batch them
-    N = y_tr.shape[0]
-    num_batches = (N + batch_size - 1) // batch_size
-    pad = num_batches * batch_size - N
+    N_tr = y_tr.shape[0]
+    num_batches_tr = (N_tr + batch_size - 1) // batch_size
+    pad = num_batches_tr * batch_size - N_tr
     if pad > 0:
         y_tr = jnp.pad(y_tr, ((0, pad), (0,0)), mode='edge')
         X_tr = jnp.pad(X_tr, ((0, pad), (0,0)), mode='edge')
-    y_tr = y_tr.reshape(num_batches, batch_size, *y_tr.shape[1:])
-    X_tr = X_tr.reshape(num_batches, batch_size, *X_tr.shape[1:])
+    y_tr = y_tr.reshape(num_batches_tr, batch_size, *y_tr.shape[1:])
+    X_tr = X_tr.reshape(num_batches_tr, batch_size, *X_tr.shape[1:])
+
+    N_te = y_te.shape[0]
+    num_batches_te = (N_te + batch_size - 1) // batch_size
+    pad = num_batches_te * batch_size - N_te
+    if pad > 0:
+        y_te = jnp.pad(y_te, ((0, pad), (0,0)), mode='edge')
+        X_te = jnp.pad(X_te, ((0, pad), (0,0)), mode='edge')
+    y_te = y_te.reshape(num_batches_te, batch_size, *y_te.shape[1:])
+    X_te = X_te.reshape(num_batches_te, batch_size, *X_te.shape[1:])
 
     # Convert to JAX arrays (targets flattened to shape (N,))
     out = {
         "Z": jnp.asarray(X_tr),
-        "y": jnp.asarray(y_tr.squeeze(-1)),
+        "y": jnp.asarray(y_tr),
         "Z_test":  jnp.asarray(X_te),
-        "y_test":  jnp.asarray(y_te.squeeze(-1)),
+        "y_test":  jnp.asarray(y_te),
         "z_stats": (jnp.asarray(x_mean.squeeze(0)), jnp.asarray(x_std.squeeze(0))),
         "y_stats": (jnp.asarray(y_min.item()),     jnp.asarray(y_max.item())),
-        "batch_size": batch_size
+        "batch_size": batch_size,
+        "num_batches_tr": num_batches_tr,
+        "num_batches_te": num_batches_te,
     }
     return out
 

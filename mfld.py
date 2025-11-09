@@ -24,7 +24,8 @@ from goodpoints.jax.sliceable_points import SliceablePoints
 
 
 def glorot_normal(key, fan_in, fan_out):
-    std = jnp.sqrt(2.0 / (fan_in + fan_out))
+    # std = jnp.sqrt(2.0 / (fan_in + fan_out))
+    std = 1.0
     return std * jax.random.normal(key, (fan_in, fan_out))
 
 def initialize(key, d_in, d_hidden, d_out):
@@ -52,10 +53,10 @@ class MFLD:
         self.cfg = cfg
         self.problem = problem
         self.data = problem.data
-        self.counter = 0
         self.seed = cfg.seed
         self.save_freq = save_freq
         self.kernel_type = cfg.kernel
+        self.counter = 0
         if self.kernel_type == "sobolev":
             k_params = np.array([1.0, 2.0, 3.0]) 
         elif self.kernel_type == "gaussian":
@@ -93,10 +94,7 @@ class MFLD:
             raise ValueError(f"Unknown thinning method: {thinning}")
 
         self._vm_q1 = vmap(vmap(self.problem.q1, in_axes=(None, 0)), in_axes=(0, None))  # (N,d) -> (N,)
-        if problem.output_d == 1:
-            self._vm_grad_q1 = vmap(vmap(grad(self.problem.q1, argnums=1), in_axes=(None, 0)), in_axes=(0, None))      # (N,d) -> (N,d)
-        else:
-            self._vm_grad_q1 = vmap(vmap(lambda z, x: jax.jacrev(self.problem.q1, argnums=1)(z, x), in_axes=(None, 0)), in_axes=(0, None))  # (N,d) -> (N,d,out_d)
+        self._vm_grad_q1 = vmap(vmap(lambda z, x: jax.jacrev(self.problem.q1, argnums=1)(z, x), in_axes=(None, 0)), in_axes=(0, None))  # (N,d) -> (N,d,out_d)
 
         if self.problem.q2 is None and self.problem.gradx_q2 is None:
             gx = lambda x, y: 0 * x
@@ -109,13 +107,13 @@ class MFLD:
 
     # Treat `self` as static for JIT so the callables are constants.
     @partial(jit, static_argnums=0)
-    def vector_field(self, x: Array, thinned_x: Array) -> Array:
+    def vector_field(self, x: Array, thinned_x: Array, data: Array) -> Array:
         # First term: R1'(E[q1]) * ∇q1(x)
         # s = self._vm_q1(self.data["Z"][self.counter, ...], thinned_x).sum(1) * (x.shape[0] / thinned_x.shape[0]) - self.data["y"][self.counter, ...]  # (n, )
-        s = self._vm_q1(self.data["Z"][self.counter, ...], thinned_x).mean(1)   # (n, d_out)
-        coeff = self.problem.R1_prime(s, self.data["y"][self.counter, ...])    # (n, d_out)
-        term1_vector = self._vm_grad_q1(self.data["Z"][self.counter, ...], x)       # (n, N, d_out, d)
-        # term1_mean = (coeff[:, None, None] * term1_vector).mean(0)  # (N,d)
+        (Z, y) = data
+        s = self._vm_q1(Z, thinned_x).mean(1)   # (n, d_out)
+        coeff = self.problem.R1_prime(s, y)    # (n, d_out)
+        term1_vector = self._vm_grad_q1(Z, x)       # (n, N, d_out, d)
         term1_mean = jnp.einsum("na,ncad->cd", coeff, term1_vector) / coeff.shape[0]
 
         # Second term: mean over j of ∇_x q2(x_i, x_j)
@@ -127,30 +125,17 @@ class MFLD:
 
     
     # @partial(jit, static_argnums=0)
-    def _step(self, carry, _):
-        x, key = carry
+    def _step(self, carry, iter):
+        x, batch, key = carry
         key, _ = random.split(key)
         thinned_x = self.thin_fn(x, key)
 
-        # Debug code compare MMD between x and thinned_x 
-        if self.counter == 0:
-            mmd2 = compute_mmd2(x, thinned_x, bandwidth=1.0)
-            
-            thinned_output = self._vm_q1(self.data["Z"][self.counter, ...], thinned_x).mean(1)
-            original_output = self._vm_q1(self.data["Z"][self.counter, ...], x).mean(1)
-            thin_original_mse = jnp.mean((thinned_output - original_output)**2)
-        else:
-            mmd2 = 0.0
-            thin_original_mse = 0.0
-        ###########################################
-
-        v = self.vector_field(x, thinned_x)
+        v = self.vector_field(x, thinned_x, batch)
         noise_scale = jnp.sqrt(2.0 * self.cfg.sigma * self.cfg.step_size)
         key, _ = random.split(key)
         noise = noise_scale * random.normal(key, shape=x.shape)
         x_next = x - self.cfg.step_size * v + noise
-        self.counter = (self.counter + 1) % self.data["batch_size"]
-        return (x_next, mmd2, thin_original_mse, key), x_next
+        return (x_next, key), x_next
 
     def simulate(self, x0: Optional[Array] = None) -> Array:
         key = random.PRNGKey(self.cfg.seed)
@@ -166,13 +151,24 @@ class MFLD:
         mmd_path = []
         thin_original_mse_path = []
         for t in tqdm(range(self.cfg.steps)):
-            key_, subkey = random.split(key)
-            (x, mmd2, thin_original_mse, key) , _ = self._step((x, subkey), t)
+            for i, (z, y) in enumerate(zip(self.data["Z"], self.data["y"])):
+                key_, subkey = random.split(key)
+                (x, key) , _ = self._step((x, (z, y), subkey), i)
 
-            if t % self.save_freq == 0:
-                path.append(x)
-                mmd_path.append(mmd2)
-                thin_original_mse_path.append(thin_original_mse)
+            # Debug code compare MMD between x and thinned_x 
+            (Z, y) = (self.data["Z"][0], self.data["y"][0])
+            thinned_x = self.thin_fn(x, key_)
+            mmd2 = compute_mmd2(x, thinned_x, bandwidth=1.0)
+
+            thinned_output = self._vm_q1(Z, thinned_x).mean(1)
+            original_output = self._vm_q1(Z, x).mean(1)
+            thin_original_mse = jnp.mean((thinned_output - original_output)**2)
+
+            ###########################################
+            
+            path.append(x)
+            mmd_path.append(mmd2)
+            thin_original_mse_path.append(thin_original_mse)
 
         path = jnp.stack(path, axis=0)          # (steps, N, d)
         mmd_path = jnp.stack(mmd_path, axis=0)  # (steps, )

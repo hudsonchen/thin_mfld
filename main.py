@@ -11,8 +11,8 @@ import os
 import argparse
 import pickle
 
-# from jax import config
-# config.update("jax_disable_jit", True)
+from jax import config
+config.update("jax_disable_jit", True)
 
 
 def get_config():
@@ -52,7 +52,7 @@ def main(args):
 
         def q1_nn(z, x):
             d_hidden = z.shape[-1]
-            W1, b1, W2 = x[:d_hidden], x[d_hidden+1], x[d_hidden+2][:, None]
+            W1, b1, W2 = x[:d_hidden], x[d_hidden+1], x[d_hidden+1:]
             h = jnp.tanh(z @ W1 + b1)
             return jnp.dot(jnp.tanh(W2), h)
 
@@ -77,7 +77,7 @@ def main(args):
             logits = jnp.dot(W2, h)
             return jax.nn.softmax(logits)
 
-        data = load_covertype(batch_size=128, standardize_X=True, one_hot_y=True)
+        data = load_covertype(batch_size=256, standardize_X=True, one_hot_y=True)
 
         @jax.jit
         def loss(Z, y, params):
@@ -91,7 +91,7 @@ def main(args):
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
     
-    output_d = data["y"].shape[-1] if len(data["y"].shape) > 1 else 1
+    output_d = data["y"].shape[-1] if len(data["y"].shape) > 2 else 1
     input_d = data["Z"].shape[-1]
     problem_nn = Problem(
         particle_d=data["Z"].shape[-1] + 1 + output_d,  # NN params dimension
@@ -114,8 +114,7 @@ def main(args):
 
     train_losses = []
     test_losses = []
-    xT_subsampled = xT[::max(1, T_plus_1 // 100), ...] 
-    for p in tqdm(xT_subsampled):
+    for p in tqdm(xT):
         tr_, te_ = 0.0, 0.0
         for z_tr, y_tr in zip(data["Z"], data["y"]):
             tr_ += loss(z_tr, y_tr, p)
@@ -127,14 +126,14 @@ def main(args):
     train_losses = jnp.array(train_losses)
     test_losses = jnp.array(test_losses)
 
-    print("Final Train pred:", sim._vm_q1(data["Z"][0, ...], xT_subsampled[-1]).mean(axis=0)[:5])
+    print("Final Train pred:", sim._vm_q1(data["Z"][0, ...], xT[-1]).mean(axis=0)[:5])
     print("Final Train label:", data["y"][0, ...][:5])
-    print("Final Test pred:", sim._vm_q1(data["Z_test"][0, ...], xT_subsampled[-1]).mean(axis=0)[:5])
+    print("Final Test pred:", sim._vm_q1(data["Z_test"][0, ...], xT[-1]).mean(axis=0)[:5])
     print("Final Test label:", data["y_test"][0, ...][:5])
     print("Final Train MSE:", train_losses[-1])
     print("Final Test MSE:", test_losses[-1])
 
-    jnp.save(f'{args.save_path}/trajectory.npy', xT_subsampled)
+    jnp.save(f'{args.save_path}/trajectory.npy', xT)
     jnp.save(f'{args.save_path}/mmd_path.npy', mmd_path)
     jnp.save(f'{args.save_path}/thin_original_mse_path.npy', thin_original_mse_path)
     jnp.save(f'{args.save_path}/train_losses.npy', train_losses)
@@ -146,9 +145,9 @@ def main(args):
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
     # --- (1) Training and test losses ---
-    axes[0].plot(train_losses, label="Train MSE")
-    axes[0].plot(test_losses, label="Test MSE")
-    axes[0].set_ylabel("Mean Squared Error")
+    axes[0].plot(train_losses, label="Train Loss")
+    axes[0].plot(test_losses, label="Test Loss")
+    axes[0].set_ylabel("Loss")
     axes[0].set_title("Training / Test Loss vs Step")
     axes[0].legend()
     axes[0].grid(True, linestyle="--", alpha=0.5)
