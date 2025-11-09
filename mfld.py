@@ -69,7 +69,7 @@ class MFLD:
             #
             # kernel_fn = partial(uncentered_matern_32_kernel, l=float(1.0))
             # rng = np.random.default_rng(self.seed)
-            # def thin_fn(x):
+            # def thin_fn(x, key):
             #     points = SliceablePoints({"X": x})  
             #     coresets = kt_compresspp(kernel_fn, points, w=jnp.ones(self.cfg.N) / self.cfg.N, 
             #                  rng_gen=rng, inflate_size=int(self.cfg.N), g=0, delta=0.5)
@@ -141,10 +141,10 @@ class MFLD:
         key = random.PRNGKey(self.cfg.seed)
         if x0 is None:
             key, sub = random.split(key)
-            # x0 = 0.5 * random.normal(sub, (self.cfg.N, self.problem.particle_d)) * 0.1
-            W1_0, b1_0, W2_0 = initialize(key, d_in=self.problem.input_d, d_hidden=self.cfg.N, 
-                                          d_out=self.problem.output_d)
-            x0 = jnp.concatenate([W1_0.T, b1_0[:, None], W2_0], axis=1)  # (N, d)
+            x0 = 0.5 * random.normal(sub, (self.cfg.N, self.problem.particle_d)) * 0.1
+            # W1_0, b1_0, W2_0 = initialize(key, d_in=self.problem.input_d, d_hidden=self.cfg.N, 
+                                        #   d_out=self.problem.output_d)
+            # x0 = jnp.concatenate([W1_0.T, b1_0[:, None], W2_0], axis=1)  # (N, d)
 
         x = x0
         path = []

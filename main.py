@@ -10,10 +10,12 @@ import time
 import os
 import argparse
 import pickle
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.5"  # Use only 50% of GPU memory
+os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
 
-from jax import config
-config.update("jax_disable_jit", True)
-
+# from jax import config
+# config.update("jax_disable_jit", True)
 
 def get_config():
     parser = argparse.ArgumentParser(description='mmd_flow_cubature')
@@ -61,7 +63,10 @@ def main(args):
         @jax.jit
         def loss(Z, y, params):
             """Compute MSE for a given parameter vector `params`."""
-            preds_all = jax.vmap(q1_nn, in_axes=(None, 0))(Z, params)
+            preds_all = jax.vmap(                       # over particles
+                    jax.vmap(q1_nn, in_axes=(0, None)),     # over batch
+                    in_axes=(None, 0)                          # Z[p], params[p]
+                )(Z, params)
             preds = preds_all.mean(axis=0)
             return jnp.mean((preds - y) ** 2)
         
@@ -126,10 +131,10 @@ def main(args):
     train_losses = jnp.array(train_losses)
     test_losses = jnp.array(test_losses)
 
-    print("Final Train pred:", sim._vm_q1(data["Z"][0, ...], xT[-1]).mean(axis=0)[:5])
-    print("Final Train label:", data["y"][0, ...][:5])
-    print("Final Test pred:", sim._vm_q1(data["Z_test"][0, ...], xT[-1]).mean(axis=0)[:5])
-    print("Final Test label:", data["y_test"][0, ...][:5])
+    print("Final Train pred:", sim._vm_q1(data["Z"][0, ...], xT[-1]).mean(axis=0)[:5].squeeze())
+    print("Final Train label:", data["y"][0, ...][:5].squeeze())
+    print("Final Test pred:", sim._vm_q1(data["Z_test"][0, ...], xT[-1]).mean(axis=0)[:5].squeeze())
+    print("Final Test label:", data["y_test"][0, ...][:5].squeeze())
     print("Final Train MSE:", train_losses[-1])
     print("Final Test MSE:", test_losses[-1])
 
