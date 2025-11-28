@@ -1,6 +1,6 @@
 from utils.configs import CFG
-from utils.problems import Problem
-from mfld import MFLD
+from utils.problems import Problem_nn, Problem_vlm
+from mfld import MFLD_nn, MFLD_vlm
 from utils.datasets import load_boston, load_covertype
 import jax.numpy as jnp
 import jax
@@ -10,12 +10,18 @@ import time
 import os
 import argparse
 import pickle
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.5"  # Use only 50% of GPU memory
-os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
+from utils.lotka_volterra import lotka_volterra_ws, lotka_volterra_ms
+from utils.evaluate import eval_boston, eval_covertype, eval_vlm
+
+# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.5"  # Use only 50% of GPU memory
+# os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
 
 # from jax import config
 # config.update("jax_disable_jit", True)
+# config.update("jax_enable_x64", True)
+jax.config.update("jax_platform_name", "cpu")
+
 
 def get_config():
     parser = argparse.ArgumentParser(description='mmd_flow_cubature')
@@ -56,9 +62,9 @@ def main(args):
             d_hidden = z.shape[-1]
             W1, b1, W2 = x[:d_hidden], x[d_hidden+1], x[d_hidden+1:]
             h = jnp.tanh(z @ W1 + b1)
-            return jnp.dot(jnp.tanh(W2), h)
+            return jnp.dot(W2, h)
 
-        data = load_boston(batch_size=64, standardize_X=True, standardize_y=True)
+        data = load_boston(batch_size=64, standardize_X=True, standardize_y=False)
 
         @jax.jit
         def loss(Z, y, params):
@@ -70,6 +76,19 @@ def main(args):
             preds = preds_all.mean(axis=0)
             return jnp.mean((preds - y) ** 2)
         
+        output_d = data["y"].shape[-1] if len(data["y"].shape) > 2 else 1
+        input_d = data["Z"].shape[-1]
+        problem_nn = Problem_nn(
+            particle_d=data["Z"].shape[-1] + 1 + output_d,  # NN params dimension
+            input_d=input_d,
+            output_d=output_d,
+            R1_prime=R1_prime,
+            q1=q1_nn,
+            q2=None,
+            gradx_q2=None,
+            data=data
+        )
+
     elif args.dataset == 'covertype':
 
         def R1_prime(hat_y, y):  # R1(s)=0.5*s^2
@@ -92,91 +111,107 @@ def main(args):
                     in_axes=(None, 0)                          # Z[p], params[p]
                 )(Z, params)
             preds = preds_all.mean(axis=0)  # (batch_size, num_classes)
-            return -jnp.mean(jnp.sum(y * jnp.log(preds + 1e-8), axis=1))
+            loss_val = -jnp.mean(jnp.sum(y * jnp.log(preds + 1e-8), axis=1))
+            acc_val = jnp.mean(jnp.argmax(preds, axis=1) == jnp.argmax(y, axis=1))
+            return loss_val, acc_val
+
+        output_d = data["y"].shape[-1] if len(data["y"].shape) > 2 else 1
+        input_d = data["Z"].shape[-1]
+        problem_nn = Problem_nn(
+            particle_d=data["Z"].shape[-1] + 1 + output_d,  # NN params dimension
+            input_d=input_d,
+            output_d=output_d,
+            R1_prime=R1_prime,
+            q1=q1_nn,
+            q2=None,
+            gradx_q2=None,
+            data=data
+        )
+
+    elif args.dataset == 'vlm':
+        from utils.kernel import gaussian_kernel
+        # init = jnp.array([10.0, 15.0])
+        init = jnp.array([10.0, 10.0])
+        # x_ground_truth = jnp.array([-1., -1.5413]) # True parameters for Lotka-Volterra copied from Clementine's code
+        x_ground_truth = jnp.array([-2.0, -1.733]) # True parameters from Zheyang's paper
+        data = lotka_volterra_ws(init, x_ground_truth)
+        def q2(x, x_prime):
+            traj_1 = lotka_volterra_ms(init, x)
+            traj_2 = lotka_volterra_ms(init, x_prime)
+            kernel_fn = jax.vmap(jax.vmap(gaussian_kernel, in_axes=(None, 0, None)), in_axes=(0, None, None))
+            part1 = kernel_fn(traj_1, traj_2, 1.0)
+            part2 = kernel_fn(traj_1, data, 1.0)
+            return part1.sum() - 2 * part2.sum()
+        
+        problem_vlm = Problem_vlm(
+            particle_d=2,
+            q2=q2,
+            data=data
+        )
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
     
-    output_d = data["y"].shape[-1] if len(data["y"].shape) > 2 else 1
-    input_d = data["Z"].shape[-1]
-    problem_nn = Problem(
-        particle_d=data["Z"].shape[-1] + 1 + output_d,  # NN params dimension
-        input_d=input_d,
-        output_d=output_d,
-        R1_prime=R1_prime,
-        q1=q1_nn,
-        q2=None,
-        gradx_q2=None,
-        data=data
-    )
-
-    cfg = CFG(N=args.particle_num, steps=args.step_num, step_size=args.step_size, sigma=args.noise_scale, kernel=args.kernel,
+    if args.dataset in ['boston', 'covertype']:
+        cfg = CFG(N=args.particle_num, steps=args.step_num, step_size=args.step_size, sigma=args.noise_scale, kernel=args.kernel,
               zeta=1e-4, g=args.g, seed=args.seed, bandwidth=args.bandwidth, return_path=True)
-    sim = MFLD(save_freq=data["num_batches_tr"], thinning=args.thinning, cfg=cfg, problem=problem_nn)
-    xT, mmd_path, thin_original_mse_path = sim.simulate()
+        sim = MFLD_nn(problem=problem_nn, save_freq=data["num_batches_tr"], thinning=args.thinning, cfg=cfg)
+        X0 = None
+    elif args.dataset == 'vlm':
+        cfg = CFG(N=args.particle_num, steps=args.step_num, step_size=args.step_size, sigma=args.noise_scale, kernel=args.kernel,
+              zeta=1e-4, g=args.g, seed=args.seed, bandwidth=args.bandwidth, return_path=True)
+        sim = MFLD_vlm(problem=problem_vlm, save_freq=1, thinning=args.thinning, cfg=cfg)
+        rng_key = jax.random.PRNGKey(args.seed)
+        X0 = jnp.stack([x_ground_truth] * args.particle_num, 0)
+        X0 += 1e-5 * jax.random.normal(rng_key, X0.shape)
+    xT, mmd_path, thin_original_mse_path = sim.simulate(x0=X0)
 
     # Plotting code
     T_plus_1, N, d = xT.shape
 
-    train_losses = []
-    test_losses = []
-    for p in tqdm(xT):
-        tr_, te_ = 0.0, 0.0
-        for z_tr, y_tr in zip(data["Z"], data["y"]):
-            tr_ += loss(z_tr, y_tr, p)
-        for z_te, y_te in zip(data["Z_test"], data["y_test"]):
-            te_ += loss(z_te, y_te, p)
-        train_losses.append(float(tr_) / data["num_batches_tr"])
-        test_losses.append(float(te_) / data["num_batches_te"])
+    if args.dataset == 'boston':
+        eval_boston(sim, xT, data, loss)
 
-    train_losses = jnp.array(train_losses)
-    test_losses = jnp.array(test_losses)
+    elif args.dataset == 'covertype':
+        eval_covertype(sim, xT, data, loss)
 
-    print("Final Train pred:", sim._vm_q1(data["Z"][0, ...], xT[-1]).mean(axis=0)[:5].squeeze())
-    print("Final Train label:", data["y"][0, ...][:5].squeeze())
-    print("Final Test pred:", sim._vm_q1(data["Z_test"][0, ...], xT[-1]).mean(axis=0)[:5].squeeze())
-    print("Final Test label:", data["y_test"][0, ...][:5].squeeze())
-    print("Final Train MSE:", train_losses[-1])
-    print("Final Test MSE:", test_losses[-1])
+    elif args.dataset == 'vlm':
+        eval_vlm(args, sim, xT, data, init, x_ground_truth, lotka_volterra_ws, lotka_volterra_ms)
+    else:
+        raise ValueError(f"Unknown dataset: {args.dataset}")
+    
+    # # ---- Plot ----
+    # import matplotlib.pyplot as plt
 
-    jnp.save(f'{args.save_path}/trajectory.npy', xT)
-    jnp.save(f'{args.save_path}/mmd_path.npy', mmd_path)
-    jnp.save(f'{args.save_path}/thin_original_mse_path.npy', thin_original_mse_path)
-    jnp.save(f'{args.save_path}/train_losses.npy', train_losses)
-    jnp.save(f'{args.save_path}/test_losses.npy', test_losses)
+    # fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
-    # ---- Plot ----
-    import matplotlib.pyplot as plt
+    # # --- (1) Training and test losses ---
+    # axes[0].plot(train_losses, label="Train Loss")
+    # axes[0].plot(test_losses, label="Test Loss")
+    # axes[0].set_ylabel("Loss")
+    # axes[0].set_title("Training / Test Loss vs Step")
+    # axes[0].legend()
+    # axes[0].grid(True, linestyle="--", alpha=0.5)
 
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    # # --- (2) MMD^2 path ---
+    # axes[1].plot(mmd_path, color="C2", label="MMD$^2$")
+    # axes[1].set_xlabel("Training Step")
+    # axes[1].set_ylabel("MMD$^2$")
+    # axes[1].legend()
+    # axes[1].set_yscale("log")
+    # axes[1].grid(True, linestyle="--", alpha=0.5)
 
-    # --- (1) Training and test losses ---
-    axes[0].plot(train_losses, label="Train Loss")
-    axes[0].plot(test_losses, label="Test Loss")
-    axes[0].set_ylabel("Loss")
-    axes[0].set_title("Training / Test Loss vs Step")
-    axes[0].legend()
-    axes[0].grid(True, linestyle="--", alpha=0.5)
-
-    # --- (2) MMD^2 path ---
-    axes[1].plot(mmd_path, color="C2", label="MMD$^2$")
-    axes[1].set_xlabel("Training Step")
-    axes[1].set_ylabel("MMD$^2$")
-    axes[1].legend()
-    axes[1].set_yscale("log")
-    axes[1].grid(True, linestyle="--", alpha=0.5)
-
-    # --- (3) Thinned vs Original MSE path ---
-    axes[2].plot(thin_original_mse_path, color="C3", label="Thin-Original MSE")
-    axes[2].set_xlabel("Training Step")
-    axes[2].set_ylabel("MSE")
-    axes[2].set_title("Thinned vs Original Output MSE")
-    axes[2].legend()
-    axes[2].set_yscale("log")
-    axes[2].grid(True, linestyle="--", alpha=0.5)
-    # --- Layout and save ---
-    plt.tight_layout()
-    plt.savefig(f"{args.save_path}/mfld_boston_nn_loss_mmd.png", dpi=300)
-    plt.show()
+    # # --- (3) Thinned vs Original MSE path ---
+    # axes[2].plot(thin_original_mse_path, color="C3", label="Thin-Original MSE")
+    # axes[2].set_xlabel("Training Step")
+    # axes[2].set_ylabel("MSE")
+    # axes[2].set_title("Thinned vs Original Output MSE")
+    # axes[2].legend()
+    # axes[2].set_yscale("log")
+    # axes[2].grid(True, linestyle="--", alpha=0.5)
+    # # --- Layout and save ---
+    # plt.tight_layout()
+    # plt.savefig(f"{args.save_path}/mfld_boston_nn_loss_mmd.png", dpi=300)
+    # plt.show()
 
     return
 

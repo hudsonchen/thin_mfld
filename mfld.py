@@ -1,8 +1,4 @@
-
-# JAX mean-field Langevin dynamics as a reusable class.
-# v_mu(x) = R1'( E[q1] ) ∇q1(x) + E[ ∇_x q2(x, X̃) ]
-# dX_t = -v_mu(X_t) step_size + sqrt(2/β) dW_t
-
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import partial
 from typing import Callable, Optional
@@ -12,7 +8,6 @@ import jax.numpy as jnp
 import numpy as np
 from jax import jit, vmap, grad, random, lax
 from utils.configs import CFG
-from utils.problems import Problem
 from utils.kernel import compute_mmd2
 from jaxtyping import Array 
 from jax_tqdm import scan_tqdm
@@ -38,18 +33,17 @@ def initialize(key, d_in, d_hidden, d_out):
     return W1, b1, W2
 
 
+# def uncentered_matern_32_kernel(points_x, points_y, l):
+#     X, Y = points_x.get("X"), points_y.get("X")  # (N_x, d), (N_y, d)
+#     # diff = X[:, None, :] - Y[None, :, :]         # (N_x, N_y, d)
+#     diff = X - Y
+#     dists = jnp.linalg.norm(diff, axis=-1)       # (N_x, N_y)
+#     sqrt3_r = jnp.sqrt(3.0) * dists / l
+#     return (1.0 + sqrt3_r) * jnp.exp(-sqrt3_r)   # (N_x, N_y)
 
-def uncentered_matern_32_kernel(points_x, points_y, l):
-    X, Y = points_x.get("X"), points_y.get("X")  # (N_x, d), (N_y, d)
-    # diff = X[:, None, :] - Y[None, :, :]         # (N_x, N_y, d)
-    diff = X - Y
-    dists = jnp.linalg.norm(diff, axis=-1)       # (N_x, N_y)
-    sqrt3_r = jnp.sqrt(3.0) * dists / l
-    return (1.0 + sqrt3_r) * jnp.exp(-sqrt3_r)   # (N_x, N_y)
 
-
-class MFLD:
-    def __init__(self, thinning, save_freq,cfg: CFG, problem: Problem):
+class MFLDBase(ABC):
+    def __init__(self, problem, thinning: str, save_freq: int, cfg: CFG):
         self.cfg = cfg
         self.problem = problem
         self.data = problem.data
@@ -57,12 +51,15 @@ class MFLD:
         self.save_freq = save_freq
         self.kernel_type = cfg.kernel
         self.counter = 0
+
+        # Kernel parameters for kt thinning
         if self.kernel_type == "sobolev":
-            k_params = np.array([1.0, 2.0, 3.0]) 
+            k_params = np.array([1.0, 2.0, 3.0])
         elif self.kernel_type == "gaussian":
             k_params = np.array([self.cfg.bandwidth])
         else:
             raise ValueError(f"Unknown kernel type: {self.kernel_type}")
+
 
         if thinning == 'kt':
             # This is the jax version of kt_compresspp, which is very slow.
@@ -93,19 +90,19 @@ class MFLD:
         else:
             raise ValueError(f"Unknown thinning method: {thinning}")
 
-        self._vm_q1 = vmap(vmap(self.problem.q1, in_axes=(None, 0)), in_axes=(0, None))  # (N,d) -> (N,)
-        self._vm_grad_q1 = vmap(vmap(lambda z, x: jax.jacrev(self.problem.q1, argnums=1)(z, x), in_axes=(None, 0)), in_axes=(0, None))  # (N,d) -> (N,d,out_d)
+        if self.problem.q1 is not None:
+            self._vm_q1 = vmap(vmap(self.problem.q1, in_axes=(None, 0)), in_axes=(0, None))
+            self._vm_grad_q1 = vmap(vmap(lambda z, x: jax.jacrev(self.problem.q1, argnums=1)(z, x), in_axes=(None, 0)), in_axes=(0, None))
+        
+        if self.problem.q2 is not None:
+            self._vm_q2 = vmap(vmap(self.problem.q2, in_axes=(None, 0)), in_axes=(0, None))
+            self._vm_grad_q2 = vmap(vmap(lambda z, x: jax.grad(self.problem.q2, argnums=0)(z, x), in_axes=(None, 0)), in_axes=(0, None))
 
-        if self.problem.q2 is None and self.problem.gradx_q2 is None:
-            gx = lambda x, y: 0 * x
-            self._pair_gx = lambda xi, X: vmap(lambda yj: gx(xi, yj))(X)  # (N,d) -> (N,d)
-        else:
-            self._pair_gx = lambda xi, X: vmap(lambda yj: self.problem.gradx_q2(xi, yj))(X)  # (N,d) -> (N,d)
 
-        # Vectorized over all (i,j) pairs: returns (N,N,d)
-        self._all_pairs_gx = lambda X: vmap(lambda xi: self._pair_gx(xi, X))(X)
+class MFLD_nn(MFLDBase):
+    def __init__(self, problem, thinning, save_freq,cfg: CFG):
+        super().__init__(problem, thinning, save_freq, cfg)
 
-    # Treat `self` as static for JIT so the callables are constants.
     @partial(jit, static_argnums=0)
     def vector_field(self, x: Array, thinned_x: Array, data: Array) -> Array:
         # First term: R1'(E[q1]) * ∇q1(x)
@@ -115,15 +112,9 @@ class MFLD:
         coeff = self.problem.R1_prime(s, y)    # (n, d_out)
         term1_vector = self._vm_grad_q1(Z, x)       # (n, N, d_out, d)
         term1_mean = jnp.einsum("na,ncad->cd", coeff, term1_vector) / coeff.shape[0]
+        reg = self.cfg.zeta * x
+        return term1_mean + reg
 
-        # Second term: mean over j of ∇_x q2(x_i, x_j)
-        gx = self._all_pairs_gx(x)                   # (N,N,d)
-        term2 = jnp.mean(gx, axis=1)                 # (N,d)
-        # Regularization 
-        term3 = self.cfg.zeta * x
-        return term1_mean + term2 + term3
-
-    
     # @partial(jit, static_argnums=0)
     def _step(self, carry, iter):
         x, batch, key = carry
@@ -158,12 +149,72 @@ class MFLD:
             # Debug code compare MMD between x and thinned_x 
             (Z, y) = (self.data["Z"][0], self.data["y"][0])
             thinned_x = self.thin_fn(x, key_)
-            mmd2 = compute_mmd2(x, thinned_x, bandwidth=1.0)
+            mmd2 = compute_mmd2(x, thinned_x, bandwidth=self.cfg.bandwidth)
 
             thinned_output = self._vm_q1(Z, thinned_x).mean(1)
             original_output = self._vm_q1(Z, x).mean(1)
             thin_original_mse = jnp.mean((thinned_output - original_output)**2)
 
+            ###########################################
+            
+            path.append(x)
+            mmd_path.append(mmd2)
+            thin_original_mse_path.append(thin_original_mse)
+
+        path = jnp.stack(path, axis=0)          # (steps, N, d)
+        mmd_path = jnp.stack(mmd_path, axis=0)  # (steps, )
+        thin_original_mse_path = jnp.stack(thin_original_mse_path, axis=0)  # (steps, )
+
+        return path, mmd_path, thin_original_mse_path
+
+
+
+class MFLD_vlm(MFLDBase):
+    def __init__(self, problem, thinning, save_freq,cfg: CFG):
+        super().__init__(problem, thinning, save_freq, cfg)
+
+    @partial(jit, static_argnums=0)
+    def vector_field(self, x: Array, thinned_x: Array) -> Array:
+        term1_vector = self._vm_grad_q2(x, thinned_x)  # (n, N, d)
+        term1_mean = jnp.mean(term1_vector, axis=1)     # (n, d)
+        reg = self.cfg.zeta * x
+        return term1_mean + reg
+    
+    # @partial(jit, static_argnums=0)
+    def _step(self, carry, iter):
+        x, key = carry
+        key, _ = random.split(key)
+        thinned_x = self.thin_fn(x, key)
+
+        v = self.vector_field(x, thinned_x)
+        noise_scale = jnp.sqrt(2.0 * self.cfg.sigma * self.cfg.step_size)
+        key, _ = random.split(key)
+        noise = noise_scale * random.normal(key, shape=x.shape)
+        x_next = x - self.cfg.step_size * v + noise
+        return (x_next, key), x_next
+    
+    def simulate(self, x0: Optional[Array] = None) -> Array:
+        key = random.PRNGKey(self.cfg.seed)
+        if x0 is None:
+            key, sub = random.split(key)
+            x0 = 0.5 * random.normal(sub, (self.cfg.N, self.problem.particle_d)) * 0.1
+
+        x = x0
+        path = []
+        mmd_path = []
+        thin_original_mse_path = []
+        for t in tqdm(range(self.cfg.steps)):
+            key_, subkey = random.split(key)
+            (x, key) , _ = self._step((x, subkey), t)
+
+            # Debug code compare MMD between x and thinned_x 
+            thinned_x = self.thin_fn(x, key_)
+            mmd2 = compute_mmd2(x, thinned_x, bandwidth=self.cfg.bandwidth)
+
+            # thinned_output = self._vm_grad_q2(x, thinned_x)
+            # original_output = self._vm_grad_q2(x, x)
+            # thin_original_mse = jnp.mean((thinned_output - original_output)**2)
+            thin_original_mse = 0.0
             ###########################################
             
             path.append(x)
