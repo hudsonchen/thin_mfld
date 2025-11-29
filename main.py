@@ -38,6 +38,7 @@ def get_config():
     parser.add_argument('--particle_num', type=int, default=100)
     parser.add_argument('--save_path', type=str, default='./results/')
     parser.add_argument('--thinning', type=str, default='kt')
+    parser.add_argument('--zeta', type=float, default=1e-4)
     args = parser.parse_args()  
     return args
 
@@ -46,7 +47,7 @@ def create_dir(args):
         args.seed = int(time.time())
     args.save_path += f"neural_network_{args.dataset}/thinning_{args.thinning}/"
     args.save_path += f"kernel_{args.kernel}__step_size_{args.step_size}__bandwidth_{args.bandwidth}__step_num_{args.step_num}"
-    args.save_path += f"__g_{args.g}__particle_num_{args.particle_num}__noise_scale_{args.noise_scale}"
+    args.save_path += f"__g_{args.g}__particle_num_{args.particle_num}__noise_scale_{args.noise_scale}__zeta_{args.zeta}"
     args.save_path += f"__seed_{args.seed}"
     os.makedirs(args.save_path, exist_ok=True)
     with open(f'{args.save_path}/configs', 'wb') as handle:
@@ -54,6 +55,7 @@ def create_dir(args):
     return args
 
 def main(args):
+    rng_key = jax.random.PRNGKey(args.seed)
     if args.dataset == 'boston':
         def R1_prime(hat_y, y):  # R1(s)=0.5*s^2
             return hat_y - y
@@ -130,15 +132,18 @@ def main(args):
 
     elif args.dataset == 'vlm':
         from utils.kernel import gaussian_kernel
-        # init = jnp.array([10.0, 15.0])
-        init = jnp.array([10.0, 10.0])
-        # x_ground_truth = jnp.array([-1., -1.5413]) # True parameters for Lotka-Volterra copied from Clementine's code
-        x_ground_truth = jnp.array([-2.0, -1.733]) # True parameters from Zheyang's paper
-        data = lotka_volterra_ws(init, x_ground_truth)
-        def q2(x, x_prime):
-            traj_1 = lotka_volterra_ms(init, x)
-            traj_2 = lotka_volterra_ms(init, x_prime)
-            kernel_fn = jax.vmap(jax.vmap(gaussian_kernel, in_axes=(None, 0, None)), in_axes=(0, None, None))
+        init = jnp.array([10.0, 15.0])
+        # init = jnp.array([10.0, 10.0])
+        x_ground_truth = jnp.array([-1., -1.5413]) # True parameters for Lotka-Volterra copied from Clementine's code
+        # x_ground_truth = jnp.array([-2.0, -1.733]) # True parameters from Zheyang's paper
+        rng_key = jax.random.PRNGKey(14)
+        data = lotka_volterra_ms(init, x_ground_truth, rng_key)
+        def q2(x, x_prime, rng_key):
+            rng_key, _ = jax.random.split(rng_key)
+            traj_1 = lotka_volterra_ws(init, x, rng_key)
+            rng_key, _ = jax.random.split(rng_key)
+            traj_2 = lotka_volterra_ws(init, x_prime, rng_key)
+            kernel_fn = jax.vmap(gaussian_kernel, in_axes=(0, 0, None))
             part1 = kernel_fn(traj_1, traj_2, 1.0)
             part2 = kernel_fn(traj_1, data, 1.0)
             return part1.sum() - 2 * part2.sum()
@@ -158,11 +163,11 @@ def main(args):
         X0 = None
     elif args.dataset == 'vlm':
         cfg = CFG(N=args.particle_num, steps=args.step_num, step_size=args.step_size, sigma=args.noise_scale, kernel=args.kernel,
-              zeta=1e-4, g=args.g, seed=args.seed, bandwidth=args.bandwidth, return_path=True)
+              zeta=args.zeta, g=args.g, seed=args.seed, bandwidth=args.bandwidth, return_path=True)
         sim = MFLD_vlm(problem=problem_vlm, save_freq=1, thinning=args.thinning, cfg=cfg)
-        rng_key = jax.random.PRNGKey(args.seed)
         X0 = jnp.stack([x_ground_truth] * args.particle_num, 0)
-        X0 += 1e-5 * jax.random.normal(rng_key, X0.shape)
+        rng_key, _ = jax.random.split(rng_key)
+        X0 += 0.1 * jax.random.normal(rng_key, X0.shape)
     xT, mmd_path, thin_original_mse_path = sim.simulate(x0=X0)
 
     # Plotting code
@@ -175,44 +180,12 @@ def main(args):
         eval_covertype(sim, xT, data, loss)
 
     elif args.dataset == 'vlm':
-        eval_vlm(args, sim, xT, data, init, x_ground_truth, lotka_volterra_ws, lotka_volterra_ms)
+        eval_vlm(args, sim, xT, data, init, x_ground_truth, 
+                 lotka_volterra_ws, lotka_volterra_ms, 
+                 mmd_path, thin_original_mse_path)
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
     
-    # # ---- Plot ----
-    # import matplotlib.pyplot as plt
-
-    # fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-
-    # # --- (1) Training and test losses ---
-    # axes[0].plot(train_losses, label="Train Loss")
-    # axes[0].plot(test_losses, label="Test Loss")
-    # axes[0].set_ylabel("Loss")
-    # axes[0].set_title("Training / Test Loss vs Step")
-    # axes[0].legend()
-    # axes[0].grid(True, linestyle="--", alpha=0.5)
-
-    # # --- (2) MMD^2 path ---
-    # axes[1].plot(mmd_path, color="C2", label="MMD$^2$")
-    # axes[1].set_xlabel("Training Step")
-    # axes[1].set_ylabel("MMD$^2$")
-    # axes[1].legend()
-    # axes[1].set_yscale("log")
-    # axes[1].grid(True, linestyle="--", alpha=0.5)
-
-    # # --- (3) Thinned vs Original MSE path ---
-    # axes[2].plot(thin_original_mse_path, color="C3", label="Thin-Original MSE")
-    # axes[2].set_xlabel("Training Step")
-    # axes[2].set_ylabel("MSE")
-    # axes[2].set_title("Thinned vs Original Output MSE")
-    # axes[2].legend()
-    # axes[2].set_yscale("log")
-    # axes[2].grid(True, linestyle="--", alpha=0.5)
-    # # --- Layout and save ---
-    # plt.tight_layout()
-    # plt.savefig(f"{args.save_path}/mfld_boston_nn_loss_mmd.png", dpi=300)
-    # plt.show()
-
     return
 
 

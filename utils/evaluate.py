@@ -1,6 +1,8 @@
 import jax
 import jax.numpy as jnp
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+
 
 def eval_boston(sim, xT, data, loss):
     train_losses = []
@@ -64,18 +66,20 @@ def eval_covertype(sim, xT, data, loss):
     jnp.save(f'{args.save_path}/test_losses.npy', test_losses)
 
 
-def eval_vlm(args, sim, xT, data, init, x_ground_truth, lotka_volterra_ws, lotka_volterra_ms):
-    import matplotlib.pyplot as plt
-
-    data_longer = lotka_volterra_ws(init, x_ground_truth, end=100, noise_scale=0.)
+def eval_vlm(args, sim, xT, data, init, x_ground_truth, 
+             lotka_volterra_ws, lotka_volterra_ms, 
+             mmd_path, thin_original_mse_path):
+    rng_key = jax.random.PRNGKey(14)
+    data_longer = lotka_volterra_ms(init, x_ground_truth, rng_key, end=100, noise_scale=0.)
     loss = jnp.zeros(xT.shape[0])
     for t, particles in enumerate(xT):
         # Run trajectories once
-        sampled_trajectories_all = jax.vmap(lambda p: lotka_volterra_ms(init, p, 100))(particles)
+        rng_key, _ = jax.random.split(rng_key)
+        sampled_trajectories_all = jax.vmap(lambda p: lotka_volterra_ws(init, p, rng_key, 100))(particles)
         sampled_trajectories = sampled_trajectories_all.mean(axis=0)
         sampled_trajectories_std = sampled_trajectories_all.std(axis=0)
 
-        loss = loss.at[t].set(jnp.mean((sampled_trajectories_all - data_longer) ** 2, axis=(0, 1)).sum())
+        loss = loss.at[t].set(jnp.mean((sampled_trajectories - data_longer) ** 2, axis=(0,)).sum())
         fig, axes = plt.subplots(1, 2, figsize=(12, 6))
         axes[1].plot(sampled_trajectories[:, 0], color='red', label='Prey')
         axes[1].plot(sampled_trajectories[:, 1], color='blue', label='Predator')
@@ -102,8 +106,8 @@ def eval_vlm(args, sim, xT, data, init, x_ground_truth, lotka_volterra_ws, lotka
         plt.savefig(f'{args.save_path}/vlm_distribution_step_{t}.png')
         plt.close(fig)
 
-    print("Final parameters:", xT[-1][:5, :])
-    
+    jnp.save(f'{args.save_path}/vlm_trajectory.npy', xT)
+
     plt.figure(figsize=(8, 6))
     plt.plot(loss, label='MSE Loss')
     plt.yscale('log')
@@ -111,4 +115,33 @@ def eval_vlm(args, sim, xT, data, init, x_ground_truth, lotka_volterra_ws, lotka
     plt.ylabel('MSE Loss')
     plt.savefig(f'{args.save_path}/vlm_loss.png')
     plt.close()
+
+    jnp.save(f'{args.save_path}/vlm_loss.npy', loss)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+
+    # --- (2) MMD^2 path ---
+    axes[0].plot(mmd_path, color="C2", label="MMD$^2$")
+    axes[0].set_xlabel("Training Step")
+    axes[0].set_ylabel("MMD$^2$")
+    axes[0].legend()
+    axes[0].set_yscale("log")
+    axes[0].grid(True, linestyle="--", alpha=0.5)
+
+    # --- (3) Thinned vs Original MSE path ---
+    axes[1].plot(thin_original_mse_path, color="C3", label="Thin-Original MSE")
+    axes[1].set_xlabel("Training Step")
+    axes[1].set_ylabel("MSE")
+    axes[1].set_title("Thinned vs Original Output MSE")
+    axes[1].legend()
+    axes[1].set_yscale("log")
+    axes[1].grid(True, linestyle="--", alpha=0.5)
+    # --- Layout and save ---
+    plt.tight_layout()
+    plt.savefig(f"{args.save_path}/mfld_debug_vector_field.png", dpi=300)
+    plt.show()
+
+    jnp.save(f'{args.save_path}/mmd_path.npy', mmd_path)
+    jnp.save(f'{args.save_path}/thin_original_mse_path.npy', thin_original_mse_path)
+    
     return

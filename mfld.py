@@ -95,9 +95,19 @@ class MFLDBase(ABC):
             self._vm_grad_q1 = vmap(vmap(lambda z, x: jax.jacrev(self.problem.q1, argnums=1)(z, x), in_axes=(None, 0)), in_axes=(0, None))
         
         if self.problem.q2 is not None:
-            self._vm_q2 = vmap(vmap(self.problem.q2, in_axes=(None, 0)), in_axes=(0, None))
-            self._vm_grad_q2 = vmap(vmap(lambda z, x: jax.grad(self.problem.q2, argnums=0)(z, x), in_axes=(None, 0)), in_axes=(0, None))
-
+            self._vm_q2 = jax.vmap(
+                jax.vmap(self.problem.q2, in_axes=(None, 0, 0)),  # inner: x[j], key[i,j]
+                in_axes=(0, None, 0),                             # outer: z[i], keys[i, :]
+            )
+            self._vm_q2 = jax.jit(self._vm_q2)
+            self._vm_grad_q2 = jax.vmap(
+                jax.vmap(
+                    lambda z, x, key: jax.grad(self.problem.q2, argnums=0)(z, x, key),
+                    in_axes=(None, 0, 0),
+                ),
+                in_axes=(0, None, 0),
+            )
+            self._vm_grad_q2 = jax.jit(self._vm_grad_q2)
 
 class MFLD_nn(MFLDBase):
     def __init__(self, problem, thinning, save_freq,cfg: CFG):
@@ -173,10 +183,14 @@ class MFLD_vlm(MFLDBase):
     def __init__(self, problem, thinning, save_freq,cfg: CFG):
         super().__init__(problem, thinning, save_freq, cfg)
 
-    @partial(jit, static_argnums=0)
-    def vector_field(self, x: Array, thinned_x: Array) -> Array:
-        term1_vector = self._vm_grad_q2(x, thinned_x)  # (n, N, d)
-        term1_mean = jnp.mean(term1_vector, axis=1)     # (n, d)
+    # @partial(jit, static_argnums=0)
+    def vector_field(self, x: Array, thinned_x: Array, rng_key) -> Array:
+        N, M = x.shape[0], thinned_x.shape[0]
+        keys_outer = jax.random.split(rng_key, num=N)                # (N, 2)
+        keys_mat = jax.vmap(lambda k: jax.random.split(k, num=M))(keys_outer)  # (N, M, 2)
+
+        term1_vector = self._vm_grad_q2(x, thinned_x, keys_mat)
+        term1_mean = jnp.mean(term1_vector, axis=1)
         reg = self.cfg.zeta * x
         return term1_mean + reg
     
@@ -186,7 +200,7 @@ class MFLD_vlm(MFLDBase):
         key, _ = random.split(key)
         thinned_x = self.thin_fn(x, key)
 
-        v = self.vector_field(x, thinned_x)
+        v = self.vector_field(x, thinned_x, key)
         noise_scale = jnp.sqrt(2.0 * self.cfg.sigma * self.cfg.step_size)
         key, _ = random.split(key)
         noise = noise_scale * random.normal(key, shape=x.shape)
@@ -213,7 +227,7 @@ class MFLD_vlm(MFLDBase):
 
             # thinned_output = self._vm_grad_q2(x, thinned_x)
             # original_output = self._vm_grad_q2(x, x)
-            # thin_original_mse = jnp.mean((thinned_output - original_output)**2)
+            # thin_original_mse = jnp.mean((thinned_output.mean(1) - original_output.mean(1))**2)
             thin_original_mse = 0.0
             ###########################################
             
