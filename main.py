@@ -185,12 +185,12 @@ def main(args):
         eval_boston(sim, xT, data, loss)
 
     elif args.dataset == 'covertype':
-        eval_covertype(args, sim, xT, data, loss)
+        eval_covertype(args, sim, xT, data, loss, mmd_path, thin_original_mse_path)
 
     elif args.dataset == 'vlm':
         eval_vlm(args, sim, xT, data, init, x_ground_truth, 
                  lotka_volterra_ws, lotka_volterra_ms, 
-                 mmd_path, thin_original_mse_path, args.zeta)
+                 mmd_path, thin_original_mse_path)
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
     

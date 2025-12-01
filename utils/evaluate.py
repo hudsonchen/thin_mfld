@@ -27,7 +27,7 @@ def eval_boston(sim, xT, data, loss):
     return train_losses, test_losses
 
 
-def eval_covertype(args, sim, xT, data, loss):
+def eval_covertype(args, sim, xT, data, loss, mmd_path, thin_original_mse_path):
     train_losses, train_accs = [], []
     test_losses, test_accs = [], []
     for p in tqdm(xT):
@@ -68,7 +68,7 @@ def eval_covertype(args, sim, xT, data, loss):
 
 def eval_vlm(args, sim, xT, data, init, x_ground_truth, 
              lotka_volterra_ws, lotka_volterra_ms, 
-             mmd_path, thin_original_mse_path, zeta):
+             mmd_path, thin_original_mse_path):
     rng_key = jax.random.PRNGKey(14)
     data_longer = lotka_volterra_ms(init, x_ground_truth, rng_key, end=100, noise_scale=0.)
     loss = jnp.zeros(xT.shape[0])
@@ -91,7 +91,7 @@ def eval_vlm(args, sim, xT, data, init, x_ground_truth,
             N = X.shape[0]
             keys_outer = jax.random.split(rng_key, num=N)                # (N, 2)
             keys_mat = jax.vmap(lambda keys: jax.random.split(keys, num=N))(keys_outer)  # (N, N, 2)
-            return -zeta * X + sim._vm_grad_q2(X, X, keys_mat).mean(axis=1)
+            return -args.zeta * X + sim._vm_grad_q2(X, X, keys_mat).mean(axis=1)
         k_pq = GradientKernel(S_PQ, k)
         kgd = KernelGradientDiscrepancy(k_pq)
         kgd_value = kgd.evaluate(particles)
