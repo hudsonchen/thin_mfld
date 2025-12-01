@@ -99,7 +99,6 @@ class MFLDBase(ABC):
                 jax.vmap(self.problem.q2, in_axes=(None, 0, 0)),  # inner: x[j], key[i,j]
                 in_axes=(0, None, 0),                             # outer: z[i], keys[i, :]
             )
-            self._vm_q2 = jax.jit(self._vm_q2)
             self._vm_grad_q2 = jax.vmap(
                 jax.vmap(
                     lambda z, x, key: jax.grad(self.problem.q2, argnums=0)(z, x, key),
@@ -107,13 +106,12 @@ class MFLDBase(ABC):
                 ),
                 in_axes=(0, None, 0),
             )
-            self._vm_grad_q2 = jax.jit(self._vm_grad_q2)
 
 class MFLD_nn(MFLDBase):
     def __init__(self, problem, thinning, save_freq,cfg: CFG):
         super().__init__(problem, thinning, save_freq, cfg)
 
-    @partial(jit, static_argnums=0)
+    # @partial(jit, static_argnums=0)
     def vector_field(self, x: Array, thinned_x: Array, data: Array) -> Array:
         # First term: R1'(E[q1]) * ∇q1(x)
         # s = self._vm_q1(self.data["Z"][self.counter, ...], thinned_x).sum(1) * (x.shape[0] / thinned_x.shape[0]) - self.data["y"][self.counter, ...]  # (n, )

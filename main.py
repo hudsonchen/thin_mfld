@@ -19,12 +19,22 @@ from utils.evaluate import eval_boston, eval_covertype, eval_vlm
 
 # from jax import config
 # config.update("jax_disable_jit", True)
-# config.update("jax_enable_x64", True)
+jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_platform_name", "cpu")
+import sys
+import pwd
+if pwd.getpwuid(os.getuid())[0] == 'zongchen':
+    os.chdir('/home/zongchen/mmd_flow_cubature/')
+    sys.path.append('/home/zongchen/mmd_flow_cubature/')
+elif pwd.getpwuid(os.getuid())[0] == 'ucabzc9':
+    os.chdir('/home/ucabzc9/Scratch/mmd_flow_cubature/')
+    sys.path.append('/home/ucabzc9/Scratch/mmd_flow_cubature/')
+else:
+    pass
 
 
 def get_config():
-    parser = argparse.ArgumentParser(description='mmd_flow_cubature')
+    parser = argparse.ArgumentParser(description='thinned_mfld')
 
     # Args settings
     parser.add_argument('--seed', type=int, default=42)
@@ -38,7 +48,7 @@ def get_config():
     parser.add_argument('--particle_num', type=int, default=100)
     parser.add_argument('--save_path', type=str, default='./results/')
     parser.add_argument('--thinning', type=str, default='kt')
-    parser.add_argument('--zeta', type=float, default=1e-4)
+    parser.add_argument('--zeta', type=float, default=1.0)
     args = parser.parse_args()  
     return args
 
@@ -182,7 +192,7 @@ def main(args):
     elif args.dataset == 'vlm':
         eval_vlm(args, sim, xT, data, init, x_ground_truth, 
                  lotka_volterra_ws, lotka_volterra_ms, 
-                 mmd_path, thin_original_mse_path)
+                 mmd_path, thin_original_mse_path, args.zeta)
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
     

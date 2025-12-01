@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-
+from utils.kernel import *
 
 def eval_boston(sim, xT, data, loss):
     train_losses = []
@@ -68,11 +68,13 @@ def eval_covertype(sim, xT, data, loss):
 
 def eval_vlm(args, sim, xT, data, init, x_ground_truth, 
              lotka_volterra_ws, lotka_volterra_ms, 
-             mmd_path, thin_original_mse_path):
+             mmd_path, thin_original_mse_path, zeta):
     rng_key = jax.random.PRNGKey(14)
     data_longer = lotka_volterra_ms(init, x_ground_truth, rng_key, end=100, noise_scale=0.)
     loss = jnp.zeros(xT.shape[0])
-    for t, particles in enumerate(xT):
+    kgd_values = jnp.zeros(xT.shape[0])
+
+    for t, particles in enumerate(tqdm(xT)):
         # Run trajectories once
         rng_key, _ = jax.random.split(rng_key)
         sampled_trajectories_all = jax.vmap(lambda p: lotka_volterra_ws(init, p, rng_key, 100))(particles)
@@ -80,44 +82,70 @@ def eval_vlm(args, sim, xT, data, init, x_ground_truth,
         sampled_trajectories_std = sampled_trajectories_all.std(axis=0)
 
         loss = loss.at[t].set(jnp.mean((sampled_trajectories - data_longer) ** 2, axis=(0,)).sum())
-        fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-        axes[1].plot(sampled_trajectories[:, 0], color='red', label='Prey')
-        axes[1].plot(sampled_trajectories[:, 1], color='blue', label='Predator')
-        axes[1].fill_between(
-            jnp.arange(sampled_trajectories.shape[0]),
-            sampled_trajectories[:, 0] - 2 * sampled_trajectories_std[:, 0],
-            sampled_trajectories[:, 0] + 2 * sampled_trajectories_std[:, 0],
-            color='red',
-            alpha=0.3,
-        )
-        axes[1].fill_between(
-            jnp.arange(sampled_trajectories.shape[0]),
-            sampled_trajectories[:, 1] - 2 * sampled_trajectories_std[:, 1],
-            sampled_trajectories[:, 1] + 2 * sampled_trajectories_std[:, 1],
-            color='blue',
-            alpha=0.3,
-        )
-        axes[1].plot(data_longer[:, 0], color='grey', linestyle='dashed', label='Ground Truth')
-        axes[1].plot(data_longer[:, 1], color='grey', linestyle='dashed')
-        axes[1].scatter(jnp.arange(data.shape[0]), data[:, 0], color='black', s=10, label='Prey Data')
-        axes[1].scatter(jnp.arange(data.shape[0]), data[:, 1], color='black', s=10, label='Predator Data')
-        axes[1].legend()
-        axes[1].grid(True)
-        plt.savefig(f'{args.save_path}/vlm_distribution_step_{t}.png')
-        plt.close(fig)
+
+        l = jax.jit(lambda x, y: k_imq(x, y, 1, 0.5,0.1)) #matern_kernel(x,y,5.0))
+        alpha = 2.0
+        beta = 1.0
+        k = lambda x,y : recommended_kernel(x,y,l,alpha,beta,1.0)
+        def S_PQ(X):
+            N = X.shape[0]
+            keys_outer = jax.random.split(rng_key, num=N)                # (N, 2)
+            keys_mat = jax.vmap(lambda keys: jax.random.split(keys, num=N))(keys_outer)  # (N, N, 2)
+            return -zeta * X + sim._vm_grad_q2(X, X, keys_mat).mean(axis=1)
+        k_pq = GradientKernel(S_PQ, k)
+        kgd = KernelGradientDiscrepancy(k_pq)
+        kgd_value = kgd.evaluate(particles)
+        kgd_values = kgd_values.at[t].set(kgd_value)
+
+        if t % 5 == 0:
+            fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+            axes[1].plot(sampled_trajectories[:, 0], color='red', label='Prey')
+            axes[1].plot(sampled_trajectories[:, 1], color='blue', label='Predator')
+            axes[1].fill_between(
+                jnp.arange(sampled_trajectories.shape[0]),
+                sampled_trajectories[:, 0] - 2 * sampled_trajectories_std[:, 0],
+                sampled_trajectories[:, 0] + 2 * sampled_trajectories_std[:, 0],
+                color='red',
+                alpha=0.3,
+            )
+            axes[1].fill_between(
+                jnp.arange(sampled_trajectories.shape[0]),
+                sampled_trajectories[:, 1] - 2 * sampled_trajectories_std[:, 1],
+                sampled_trajectories[:, 1] + 2 * sampled_trajectories_std[:, 1],
+                color='blue',
+                alpha=0.3,
+            )
+            axes[1].plot(data_longer[:, 0], color='grey', linestyle='dashed', label='Ground Truth')
+            axes[1].plot(data_longer[:, 1], color='grey', linestyle='dashed')
+            axes[1].scatter(jnp.arange(data.shape[0]), data[:, 0], color='black', s=10, label='Prey Data')
+            axes[1].scatter(jnp.arange(data.shape[0]), data[:, 1], color='black', s=10, label='Predator Data')
+            axes[1].legend()
+            axes[1].grid(True)
+            plt.savefig(f'{args.save_path}/vlm_distribution_step_{t}.png')
+            plt.close(fig)
 
     jnp.save(f'{args.save_path}/vlm_trajectory.npy', xT)
 
-    plt.figure(figsize=(8, 6))
-    plt.plot(loss, label='MSE Loss')
-    plt.yscale('log')
-    plt.xlabel('Training Step')
-    plt.ylabel('MSE Loss')
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    # Left subplot
+    axes[0].plot(loss, label='MSE Loss')
+    axes[0].set_yscale('log')
+    axes[0].set_xlabel('Training Step')
+    axes[0].legend()
+
+    # Right subplot (example — duplicate or plot another metric)
+    axes[1].plot(kgd_values, label='KGD')
+    axes[1].set_yscale('log')
+    axes[1].set_xlabel('Training Step')
+    axes[1].legend()
+    plt.tight_layout()
     plt.savefig(f'{args.save_path}/vlm_loss.png')
     plt.close()
 
-    jnp.save(f'{args.save_path}/vlm_loss.npy', loss)
 
+    jnp.save(f'{args.save_path}/vlm_loss.npy', loss)
+    jnp.save(f'{args.save_path}/vlm_kgd.npy', kgd_values)
     fig, axes = plt.subplots(1, 2, figsize=(12, 6))
 
     # --- (2) MMD^2 path ---
