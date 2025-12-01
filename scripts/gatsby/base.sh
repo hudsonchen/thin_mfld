@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -p gpu_lowp
+#SBATCH -p cpu
 #SBATCH --job-name=thinned_mfld
 #SBATCH --time=02:00:00        
 #SBATCH --cpus-per-task=4
@@ -9,8 +9,11 @@
 #SBATCH --error=thinned_mfld_%A_%a.out
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
-#SBATCH --nodelist=gpu-sr675-[31,33-34]
+#SBATCH --nodelist=enc3-node[4-6]
 
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+export MKL_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+export XLA_FLAGS="--xla_cpu_multi_thread_eigen=true intra_op_parallelism_threads=${SLURM_CPUS_PER_TASK}"
 
 # Get the line corresponding to this array task
 JOB_PARAMS=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "$1")
