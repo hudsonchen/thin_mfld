@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -p cpu
+#SBATCH -p gpu_lowp
 #SBATCH --job-name=thinned_mfld
 #SBATCH --time=02:00:00        
 #SBATCH --cpus-per-task=4
@@ -8,7 +8,8 @@
 #SBATCH --output=thinned_mfld_%A_%a.out
 #SBATCH --error=thinned_mfld_%A_%a.out
 #SBATCH --ntasks=1
-#SBATCH --nodelist=enc3-node[4-6]
+#SBATCH --nodes=1
+#SBATCH --nodelist=gpu-sr675-[31,33-34]
 
 
 # Get the line corresponding to this array task
