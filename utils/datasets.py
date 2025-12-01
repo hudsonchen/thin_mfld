@@ -1,4 +1,3 @@
-# pip install scikit-learn
 from sklearn.datasets import fetch_openml
 from sklearn.datasets import fetch_covtype
 from sklearn.model_selection import train_test_split

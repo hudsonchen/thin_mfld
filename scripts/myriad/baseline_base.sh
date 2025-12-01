@@ -12,7 +12,7 @@ echo "Job params: $JOB_PARAMS"
 
 # Running date and nvidia-smi is useful to get some info in case the job crashes.
 
-# module unload compilers mpi gcc-libs
+module unload compilers mpi gcc-libs
 module load gcc-libs/10.2.0
 module load compilers/gnu/10.2.0
 

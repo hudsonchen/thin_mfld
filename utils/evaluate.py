@@ -27,7 +27,7 @@ def eval_boston(sim, xT, data, loss):
     return train_losses, test_losses
 
 
-def eval_covertype(sim, xT, data, loss):
+def eval_covertype(args, sim, xT, data, loss):
     train_losses, train_accs = [], []
     test_losses, test_accs = [], []
     for p in tqdm(xT):
@@ -50,14 +50,14 @@ def eval_covertype(sim, xT, data, loss):
     test_losses = jnp.array(test_losses)
     test_accs = jnp.array(test_accs)
 
-    print("Final Train pred:", sim._vm_q1(data["Z"][0, ...], xT[-1]).mean(axis=0)[:5].squeeze())
-    print("Final Train label:", data["y"][0, ...][:5].squeeze())
-    print("Final Test pred:", sim._vm_q1(data["Z_test"][0, ...], xT[-1]).mean(axis=0)[:5].squeeze())
-    print("Final Test label:", data["y_test"][0, ...][:5].squeeze())
-    print("Final Train Loss:", train_losses[-1])
-    print("Final Test Loss:", test_losses[-1])
-    print("Final Train Acc:", train_accs[-1])
-    print("Final Test Acc:", test_accs[-1])
+    # print("Final Train pred:", sim._vm_q1(data["Z"][0, ...], xT[-1]).mean(axis=0)[:5].squeeze())
+    # print("Final Train label:", data["y"][0, ...][:5].squeeze())
+    # print("Final Test pred:", sim._vm_q1(data["Z_test"][0, ...], xT[-1]).mean(axis=0)[:5].squeeze())
+    # print("Final Test label:", data["y_test"][0, ...][:5].squeeze())
+    # print("Final Train Loss:", train_losses[-1])
+    # print("Final Test Loss:", test_losses[-1])
+    # print("Final Train Acc:", train_accs[-1])
+    # print("Final Test Acc:", test_accs[-1])
 
     jnp.save(f'{args.save_path}/trajectory.npy', xT)
     jnp.save(f'{args.save_path}/mmd_path.npy', mmd_path)

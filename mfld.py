@@ -123,7 +123,7 @@ class MFLD_nn(MFLDBase):
         reg = self.cfg.zeta * x
         return term1_mean + reg
 
-    # @partial(jit, static_argnums=0)
+    @partial(jit, static_argnums=0)
     def _step(self, carry, iter):
         x, batch, key = carry
         key, _ = random.split(key)

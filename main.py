@@ -24,11 +24,11 @@ jax.config.update("jax_platform_name", "cpu")
 import sys
 import pwd
 if pwd.getpwuid(os.getuid())[0] == 'zongchen':
-    os.chdir('/home/zongchen/mmd_flow_cubature/')
-    sys.path.append('/home/zongchen/mmd_flow_cubature/')
+    os.chdir('/home/zongchen/thinned_mfld/')
+    sys.path.append('/home/zongchen/thinned_mfld/')
 elif pwd.getpwuid(os.getuid())[0] == 'ucabzc9':
-    os.chdir('/home/ucabzc9/Scratch/mmd_flow_cubature/')
-    sys.path.append('/home/ucabzc9/Scratch/mmd_flow_cubature/')
+    os.chdir('/home/ucabzc9/Scratch/thinned_mfld/')
+    sys.path.append('/home/ucabzc9/Scratch/thinned_mfld/')
 else:
     pass
 
@@ -135,8 +135,6 @@ def main(args):
             output_d=output_d,
             R1_prime=R1_prime,
             q1=q1_nn,
-            q2=None,
-            gradx_q2=None,
             data=data
         )
 
@@ -187,7 +185,7 @@ def main(args):
         eval_boston(sim, xT, data, loss)
 
     elif args.dataset == 'covertype':
-        eval_covertype(sim, xT, data, loss)
+        eval_covertype(args, sim, xT, data, loss)
 
     elif args.dataset == 'vlm':
         eval_vlm(args, sim, xT, data, init, x_ground_truth, 

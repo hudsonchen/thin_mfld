@@ -8,7 +8,6 @@ from jaxtyping import Array
 
 @dataclass(frozen=True)
 class Problem_nn:
-    # R1' : R -> R
     particle_d: int
     input_d: int
     output_d: int
