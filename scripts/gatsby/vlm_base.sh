@@ -1,4 +1,5 @@
 #!/bin/bash
+#SBATCH -p cpu
 #SBATCH --job-name=thinned_mfld
 #SBATCH --time=01:00:00        
 #SBATCH --cpus-per-task=8
