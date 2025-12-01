@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Output config file
-OUT_FILE="$HOME/thinned_mfld/scripts/myriad/vlm_kt_configs.txt"
+OUT_FILE="$HOME/thinned_mfld/scripts/myriad/vlm_configs.txt"
 
 # Truncate the file first
 > "$OUT_FILE"
@@ -22,13 +22,6 @@ do
     done
   done
 done
-
-
-# Output config file
-OUT_FILE="$HOME/thinned_mfld/scripts/myriad/vlm_baselines_configs.txt"
-
-# Truncate the file first
-> "$OUT_FILE"
 
 for seed in {0..9}
 do
