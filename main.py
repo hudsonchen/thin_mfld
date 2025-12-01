@@ -28,6 +28,9 @@ if pwd.getpwuid(os.getuid())[0] == 'zongchen':
 elif pwd.getpwuid(os.getuid())[0] == 'ucabzc9':
     os.chdir('/home/ucabzc9/Scratch/thinned_mfld/')
     sys.path.append('/home/ucabzc9/Scratch/thinned_mfld/')
+elif pwd.getpwuid(os.getuid())[0] == 'jwornbard':
+    os.chdir('/nfs/ghome/live/jwornbard/hudson/thinned_mfld/')
+    sys.path.append('/nfs/ghome/live/jwornbard/hudson/thinned_mfld/')
 else:
     pass
 
