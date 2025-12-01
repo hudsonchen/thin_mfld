@@ -82,7 +82,8 @@ class MFLDBase(ABC):
         elif thinning == 'random':
             def thin_fn(x, rng_key):
                 rng_key, _ = jax.random.split(rng_key)
-                indices = jax.random.choice(rng_key, self.cfg.N, (int(jnp.sqrt(self.cfg.N)),), replace=False)
+                N = x.shape[0]
+                indices = jax.random.choice(rng_key, N, (int(jnp.sqrt(N)),), replace=False)
                 return x[indices, :]
             self.thin_fn = thin_fn
         elif thinning == 'false':
