@@ -74,7 +74,7 @@ class MFLDBase(ABC):
 
             # This is the cython version which is fast
             def thin_fn(x, rng_key):
-                seed = int(jax.random.randint(rng_key, (), 0, 2**31 - 1))
+                seed = jax.random.randint(rng_key, (), 0, 2**31 - 1)
                 x_cpu = np.array(np.asarray(x))
                 coresets = compress.compresspp_kt(x_cpu, kernel_type=self.kernel_type.encode("utf-8"), k_params=k_params, seed=seed, g=self.cfg.g)
                 return jax.device_put(x_cpu[coresets, :])
