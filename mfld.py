@@ -74,7 +74,7 @@ class MFLDBase(ABC):
 
             # This is the cython version which is fast
             def thin_fn(x, rng_key):
-                seed = jax.random.randint(rng_key, (), 0, 2**31 - 1)
+                seed = jax.random.randint(rng_key, (), 0, 2**31 - 1).item()
                 x_cpu = np.array(np.asarray(x))
                 coresets = compress.compresspp_kt(x_cpu, kernel_type=self.kernel_type.encode("utf-8"), k_params=k_params, seed=seed, g=self.cfg.g)
                 return jax.device_put(x_cpu[coresets, :])
@@ -112,7 +112,7 @@ class MFLD_nn(MFLDBase):
     def __init__(self, problem, thinning, save_freq,cfg: CFG):
         super().__init__(problem, thinning, save_freq, cfg)
 
-    # @partial(jit, static_argnums=0)
+    @partial(jit, static_argnums=0)
     def vector_field(self, x: Array, thinned_x: Array, data: Array) -> Array:
         # First term: R1'(E[q1]) * ∇q1(x)
         # s = self._vm_q1(self.data["Z"][self.counter, ...], thinned_x).sum(1) * (x.shape[0] / thinned_x.shape[0]) - self.data["y"][self.counter, ...]  # (n, )
@@ -124,7 +124,7 @@ class MFLD_nn(MFLDBase):
         reg = self.cfg.zeta * x
         return term1_mean + reg
 
-    @partial(jit, static_argnums=0)
+    # @partial(jit, static_argnums=0)
     def _step(self, carry, iter):
         x, batch, key = carry
         key, _ = random.split(key)
