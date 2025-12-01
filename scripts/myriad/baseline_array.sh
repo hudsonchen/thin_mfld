@@ -4,4 +4,4 @@ jobs_in_parallel=$(wc -l < "$1")
 echo $jobs_in_parallel
 echo $1
 
-qsub -t 1-${jobs_in_parallel} /home/ucabzc9/Scratch/mmd_flow_cubature/scripts/myriad/baseline_base.sh "$1"
+qsub -t 1-${jobs_in_parallel} /home/ucabzc9/Scratch/thinned_mfld/scripts/myriad/baseline_base.sh "$1"
