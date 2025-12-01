@@ -12,7 +12,7 @@ do
   do
     for g in 0
     do
-      for particle_num in 64 256
+      for particle_num in 16 64 256 1024
       do
         for zeta in 1.0 0.1 0.01
         do
@@ -34,7 +34,7 @@ for seed in {0..9}
 do
   for thinning in false random
   do
-    for particle_num in 64 256
+    for particle_num in 16 64 256 1024
     do
       for zeta in 1.0 0.1 0.01
         do

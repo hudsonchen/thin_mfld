@@ -5,7 +5,6 @@ from utils.datasets import load_boston, load_covertype
 import jax.numpy as jnp
 import jax
 from tqdm import tqdm
-from jax import lax
 import time
 import os
 import argparse
