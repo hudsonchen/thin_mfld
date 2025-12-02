@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -p gpu_lowp
+#SBATCH -p cpu
 #SBATCH --job-name=thinned_mfld
 #SBATCH --time=10:00:00        
 #SBATCH --cpus-per-task=64
@@ -9,7 +9,7 @@
 #SBATCH --error=thinned_mfld_%A_%a.out
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
-#SBATCH --nodelist=gpu-sr675-[32-33]
+#SBATCH --exclusive
 
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 export MKL_NUM_THREADS=${SLURM_CPUS_PER_TASK}
