@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Output config file
-OUT_FILE="$HOME/thinned_mfld/scripts/myriad/vlm_configs.txt"
+OUT_FILE="$HOME/thinned_mfld/scripts/gatsby/vlm_configs_large.txt"
 
 # Truncate the file first
 > "$OUT_FILE"
@@ -12,7 +12,7 @@ do
   do
     for g in 0
     do
-      for particle_num in 16 64 256 1024
+      for particle_num in 1024
       do
         for zeta in 1.0 0.1 0.01
         do
@@ -27,7 +27,7 @@ for seed in {0..9}
 do
   for thinning in false random
   do
-    for particle_num in 16 64 256 1024
+    for particle_num in 1024
     do
       for zeta in 1.0 0.1 0.01
         do
