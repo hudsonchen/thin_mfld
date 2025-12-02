@@ -3,10 +3,12 @@ import os
 import re
 
 # Root of your results
-ROOT = "/home/zongchen/thinned_mfld/results_server/neural_network_vlm"
+# dataset = 'vlm'
+dataset = 'covertype'
+ROOT = f"/home/zongchen/thinned_mfld/results_server/neural_network_{dataset}"
 
 # Where to save the configs
-OUTPUT_CONFIG = "/home/zongchen/thinned_mfld/scripts/bad_configs.txt"
+OUTPUT_CONFIG = f"/home/zongchen/thinned_mfld/scripts/bad_configs_{dataset}.txt"
 
 
 def parse_experiment_dir(dirpath: str) -> str | None:
