@@ -128,6 +128,8 @@ def eval_vlm(args, sim, xT, data, init, x_ground_truth,
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
+    print(loss)
+    
     # Left subplot
     axes[0].plot(loss, label='MSE Loss')
     axes[0].set_yscale('log')
