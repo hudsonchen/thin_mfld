@@ -127,8 +127,6 @@ def eval_vlm(args, sim, xT, data, init, x_ground_truth,
     jnp.save(f'{args.save_path}/vlm_trajectory.npy', xT)
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-    print(loss)
     
     # Left subplot
     axes[0].plot(loss, label='MSE Loss')
