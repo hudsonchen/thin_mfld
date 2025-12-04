@@ -3,8 +3,8 @@ import os
 import re
 
 # Root of your results
-# dataset = 'vlm'
-dataset = 'covertype'
+dataset = 'vlm'
+# dataset = 'covertype'
 ROOT = f"/home/zongchen/thinned_mfld/results_server/neural_network_{dataset}"
 
 # Where to save the configs
