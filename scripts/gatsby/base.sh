@@ -1,14 +1,16 @@
 #!/bin/bash
-#SBATCH -p gpu
+#SBATCH -p cpu
 #SBATCH --job-name=thinned_mfld
 #SBATCH --time=10:00:00        
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=20
 #SBATCH --mem=10G
 #SBATCH --chdir=/nfs/ghome/live/jwornbard/hudson
 #SBATCH --output=thinned_mfld_%A_%a.out
 #SBATCH --error=thinned_mfld_%A_%a.out
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
+#SBATCH --exclusive
+
 
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 export MKL_NUM_THREADS=${SLURM_CPUS_PER_TASK}
