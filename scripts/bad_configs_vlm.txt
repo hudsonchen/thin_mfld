@@ -1,3 +1,4 @@
+--seed 10 --dataset vlm --g 0 --particle_num 1024 --step_size 0.0001 --noise_scale 0.001 --bandwidth 1.0 --step_num 200 --thinning false --kernel sobolev --zeta 1.0
 --seed 3 --dataset vlm --g 0 --particle_num 1024 --step_size 0.0001 --noise_scale 0.001 --bandwidth 1.0 --step_num 200 --thinning false --kernel sobolev --zeta 0.1
 --seed 7 --dataset vlm --g 0 --particle_num 256 --step_size 0.0001 --noise_scale 0.001 --bandwidth 1.0 --step_num 200 --thinning false --kernel sobolev --zeta 0.01
 --seed 7 --dataset vlm --g 0 --particle_num 256 --step_size 0.0001 --noise_scale 0.001 --bandwidth 1.0 --step_num 200 --thinning false --kernel sobolev --zeta 0.1
