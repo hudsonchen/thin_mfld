@@ -281,6 +281,7 @@ class MFLD_mmd_flow(MFLDBase):
         from utils.kernel import gaussian_kernel
         self.kernel = gaussian_kernel(sigma=args.bandwidth)
 
+    @partial(jit, static_argnums=0)
     def vector_field(self, x: Array, thinned_x: Array, rng_key) -> Array:
         N, M = x.shape[0], thinned_x.shape[0]
         keys_outer = jax.random.split(rng_key, num=N)                # (N, 2)
@@ -293,7 +294,8 @@ class MFLD_mmd_flow(MFLDBase):
             return self.problem.distribution.mean_embedding(z).sum()
         term2_vector = jax.grad(dummy_mean_embedding)(x)
         reg = self.cfg.zeta * x
-        return term1_mean + term2_vector + reg
+        return term1_mean - term2_vector
+        # return - term2_vector
 
     # @partial(jit, static_argnums=0)
     def _step(self, carry, iter):
