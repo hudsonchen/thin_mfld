@@ -278,7 +278,9 @@ class MFLD_vlm(MFLDBase):
 class MFLD_mmd_flow(MFLDBase):
     def __init__(self, problem, thinning, save_freq, cfg: CFG, args):
         super().__init__(problem, thinning, save_freq, cfg, args)
-    
+        from utils.kernel import gaussian_kernel
+        self.kernel = gaussian_kernel(sigma=args.bandwidth)
+
     def vector_field(self, x: Array, thinned_x: Array, rng_key) -> Array:
         N, M = x.shape[0], thinned_x.shape[0]
         keys_outer = jax.random.split(rng_key, num=N)                # (N, 2)
@@ -293,6 +295,35 @@ class MFLD_mmd_flow(MFLDBase):
         reg = self.cfg.zeta * x
         return term1_mean + term2_vector + reg
 
+    # @partial(jit, static_argnums=0)
+    def _step(self, carry, iter):
+        x, key = carry
+        key, _ = random.split(key)
+
+        if self.args.thinning in ['kt', 'random', 'false']:
+            thinned_x = self.thin_fn(x, key)
+            v = self.vector_field(x, thinned_x, key)
+            noise_scale = jnp.sqrt(2.0 * self.cfg.sigma * self.cfg.step_size)
+            key, _ = random.split(key)
+            noise = noise_scale * random.normal(key, shape=x.shape)
+            x_next = x - self.cfg.step_size * v + noise
+        elif self.args.thinning == 'rbm':
+            # Random batch method 
+            B = jnp.sqrt(x.shape[0]).astype(int)
+            x_batch_all = x.reshape((-1, B, x.shape[1]))
+            x_batch_new = 0. * x_batch_all
+            for b in range(B):
+                key, subkey = random.split(key)
+                x_batch = x_batch_all[b, ...]
+                v = self.vector_field(x_batch, x_batch, key)
+                noise_scale = jnp.sqrt(2.0 * self.cfg.sigma * self.cfg.step_size)
+                key, _ = random.split(key)
+                noise = noise_scale * random.normal(key, shape=x_batch.shape)
+                x_batch = x_batch - self.cfg.step_size * v + noise
+                x_batch_new = x_batch_new.at[b, ...].set(x_batch)
+            x_next = x_batch_new.reshape((-1, x.shape[1]))
+        return (x_next, key), x_next
+    
     def simulate(self, x0: Optional[Array] = None) -> Array:
         key = random.PRNGKey(self.cfg.seed)
         if x0 is None:

@@ -10,7 +10,7 @@ import os
 import argparse
 import pickle
 from utils.lotka_volterra import lotka_volterra_ws, lotka_volterra_ms
-from utils.evaluate import eval_boston, eval_covertype, eval_vlm
+from utils.evaluate import eval_boston, eval_covertype, eval_vlm, eval_mmd_flow
 
 # os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 # os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.5"  # Use only 50% of GPU memory
@@ -164,12 +164,11 @@ def main(args):
             q2=q2,
             data=data
         )
-    elif args.dataset == 'mmd':
+    elif args.dataset == 'mmd_flow':
         from utils.kernel import gaussian_kernel
         kernel = gaussian_kernel(sigma=args.bandwidth)
         def q2(x, x_prime, rng_key):
-            kernel_fn = jax.vmap(gaussian_kernel, in_axes=(0, 0, None))
-            part2 = kernel_fn(x, x_prime, 1.0)
+            part2 = kernel.make_distance_matrix(x, x_prime)
             return part2.sum()
         
         problem_mmd_flow = Problem_mmd_flow(
@@ -213,6 +212,8 @@ def main(args):
         eval_vlm(args, sim, xT, data, init, x_ground_truth, 
                  lotka_volterra_ws, lotka_volterra_ms, 
                  mmd_path, thin_original_mse_path)
+    elif args.dataset == 'mmd_flow':
+        eval_mmd_flow(args, sim, xT, None, mmd_path, thin_original_mse_path)
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
     

@@ -246,3 +246,18 @@ class Distribution:
         subkeys = jax.random.split(rng_key, sample_size)
         samples = jax.vmap(sample_gaussian)(means, covs, subkeys)
         return samples
+
+    def pdf(self, Y):
+        """
+        Compute the probability density function of the mixture of Gaussians.
+
+        Parameters:
+        - Y: (n, d) array of points to evaluate the PDF at.
+
+        Returns:
+        - pdf: (n,) array of PDF values.
+        """
+        pdf = jnp.zeros(len(Y))
+        for i in range(self.k):
+            pdf += self.weights[i] * jax.scipy.stats.multivariate_normal.pdf(Y, self.means[i], self.covariances[i])
+        return pdf

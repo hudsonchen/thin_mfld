@@ -97,7 +97,7 @@ def eval_vlm(args, sim, xT, data, init, x_ground_truth,
         kgd_value = kgd.evaluate(particles)
         kgd_values = kgd_values.at[t].set(kgd_value)
 
-        if t % 5 == 0:
+        if t % 10 == 0:
             fig, axes = plt.subplots(1, 2, figsize=(12, 6))
             axes[1].plot(sampled_trajectories[:, 0], color='red', label='Prey')
             axes[1].plot(sampled_trajectories[:, 1], color='blue', label='Predator')
@@ -173,3 +173,76 @@ def eval_vlm(args, sim, xT, data, init, x_ground_truth,
     jnp.save(f'{args.save_path}/thin_original_mse_path.npy', thin_original_mse_path)
     
     return
+
+
+def eval_mmd_flow(args, sim, xT, data, mmd_path, thin_original_mse_path):
+    @jax.jit
+    def mmd_func(Y):
+        K_XX = sim.problem.distribution.mean_mean_embedding()
+        K_YY = sim.kernel.make_distance_matrix(Y, Y)
+        K_XY = sim.problem.distribution.mean_embedding(Y)
+        return jnp.sqrt(K_XX + K_YY.mean() - 2 * K_XY.mean())
+
+    mmd_values = jnp.zeros(xT.shape[0])
+    for t, particles in enumerate(tqdm(xT)):
+        mmd_value = mmd_func(particles)
+        mmd_values = mmd_values.at[t].set(mmd_value)
+
+    plt.figure()
+    plt.plot(mmd_values, label='MMD Value')
+    plt.yscale('log')
+    plt.xlabel('Training Step')
+    plt.ylabel('MMD Value')
+    plt.savefig(f'{args.save_path}/mmd_values_trajectory.png')
+    plt.close()
+
+    jnp.save(f'{args.save_path}/mmd_flow_trajectory.npy', xT)
+    jnp.save(f'{args.save_path}/mmd_path.npy', mmd_path)
+    jnp.save(f'{args.save_path}/thin_original_mse_path.npy', thin_original_mse_path)
+    jnp.save(f'{args.save_path}/mmd_values_trajectory.npy', mmd_values)
+
+    save_animation_2d(args, xT, sim.kernel, sim.problem.distribution, rate=5, save_path=args.save_path)
+    return 
+
+from matplotlib.animation import FuncAnimation
+import matplotlib.cm as cm
+import matplotlib
+
+def save_animation_2d(args, trajectory, kernel, distribution, rate, save_path):
+    T = trajectory.shape[0]
+    Y = trajectory[0, :, :]
+
+    num_timesteps = trajectory.shape[0]
+    num_frames = max(num_timesteps // rate, 1)
+
+    def update(frame):
+        _animate_scatter.set_offsets(trajectory[frame * rate, :, :])
+        return (_animate_scatter,)
+
+    # create initial plot
+    animate_fig, animate_ax = plt.subplots()
+    animate_ax.set_xlim(-5, 5)
+    animate_ax.set_ylim(-5, 5)
+    x_range = (-5, 5)
+    y_range = (-5, 5)
+    resolution = 100
+    x_vals = jnp.linspace(x_range[0], x_range[1], resolution)
+    y_vals = jnp.linspace(y_range[0], y_range[1], resolution)
+    X, Y = jnp.meshgrid(x_vals, y_vals)
+    grid = jnp.stack([X.ravel(), Y.ravel()], axis=1)
+    logpdf = jnp.log(distribution.pdf(grid).reshape(resolution, resolution))
+    plt.imshow(logpdf, extent=(-5, 5, -5, 5), origin='lower')
+
+    _animate_scatter = animate_ax.scatter(trajectory[0, :, 1], trajectory[0, :, 0], label='source')
+
+    ani = FuncAnimation(
+        animate_fig,
+        update,
+        frames=num_frames,
+        # init_func=init,
+        blit=True,
+        interval=50,
+    )
+    ani.save(f'{save_path}/animation.mp4',
+                   writer='ffmpeg', fps=20)
+    return    

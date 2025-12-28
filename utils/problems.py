@@ -32,5 +32,6 @@ class Problem_mmd_flow:
     R1_prime: Callable[[Array], Array] = None
     q1: Callable[[Array], Array] = None
     q2: Callable[[Array, Array], Array] = None
+    data : Optional[Array] = None
     distribution: Distribution = None
 
