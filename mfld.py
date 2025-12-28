@@ -244,7 +244,60 @@ class MFLD_vlm(MFLDBase):
         key = random.PRNGKey(self.cfg.seed)
         if x0 is None:
             key, sub = random.split(key)
-            x0 = 0.5 * random.normal(sub, (self.cfg.N, self.problem.particle_d)) * 0.1
+            x0 = 0.05 * random.normal(sub, (self.cfg.N, self.problem.particle_d))
+
+        x = x0
+        path = []
+        mmd_path = []
+        thin_original_mse_path = []
+        for t in tqdm(range(self.cfg.steps)):
+            key_, subkey = random.split(key)
+            (x, key) , _ = self._step((x, subkey), t)
+
+            # Debug code compare MMD between x and thinned_x 
+            thinned_x = self.thin_fn(x, key_)
+            mmd2 = compute_mmd2(x, thinned_x, bandwidth=self.cfg.bandwidth)
+
+            # thinned_output = self._vm_grad_q2(x, thinned_x)
+            # original_output = self._vm_grad_q2(x, x)
+            # thin_original_mse = jnp.mean((thinned_output.mean(1) - original_output.mean(1))**2)
+            thin_original_mse = 0.0
+            ###########################################
+            
+            path.append(x)
+            mmd_path.append(mmd2)
+            thin_original_mse_path.append(thin_original_mse)
+
+        path = jnp.stack(path, axis=0)          # (steps, N, d)
+        mmd_path = jnp.stack(mmd_path, axis=0)  # (steps, )
+        thin_original_mse_path = jnp.stack(thin_original_mse_path, axis=0)  # (steps, )
+
+        return path, mmd_path, thin_original_mse_path
+
+
+class MFLD_mmd_flow(MFLDBase):
+    def __init__(self, problem, thinning, save_freq, cfg: CFG, args):
+        super().__init__(problem, thinning, save_freq, cfg, args)
+    
+    def vector_field(self, x: Array, thinned_x: Array, rng_key) -> Array:
+        N, M = x.shape[0], thinned_x.shape[0]
+        keys_outer = jax.random.split(rng_key, num=N)                # (N, 2)
+        keys_mat = jax.vmap(lambda k: jax.random.split(k, num=M))(keys_outer)  # (N, M, 2)
+
+        term1_vector = self._vm_grad_q2(x, thinned_x, keys_mat)
+        term1_mean = jnp.mean(term1_vector, axis=1)
+
+        def dummy_mean_embedding(z):
+            return self.problem.distribution.mean_embedding(z).sum()
+        term2_vector = jax.grad(dummy_mean_embedding)(x)
+        reg = self.cfg.zeta * x
+        return term1_mean + term2_vector + reg
+
+    def simulate(self, x0: Optional[Array] = None) -> Array:
+        key = random.PRNGKey(self.cfg.seed)
+        if x0 is None:
+            key, sub = random.split(key)
+            x0 = 0.05 * random.normal(sub, (self.cfg.N, self.problem.particle_d))
 
         x = x0
         path = []

@@ -1,6 +1,6 @@
 from utils.configs import CFG
-from utils.problems import Problem_nn, Problem_vlm
-from mfld import MFLD_nn, MFLD_vlm
+from utils.problems import *
+from mfld import MFLD_nn, MFLD_vlm, MFLD_mmd_flow
 from utils.datasets import load_boston, load_covertype
 import jax.numpy as jnp
 import jax
@@ -142,20 +142,21 @@ def main(args):
 
     elif args.dataset == 'vlm':
         from utils.kernel import gaussian_kernel
+        kernel = gaussian_kernel(sigma=1.0)
         init = jnp.array([10.0, 15.0])
         # init = jnp.array([10.0, 10.0])
-        x_ground_truth = jnp.array([-1., -1.5413]) # True parameters for Lotka-Volterra copied from Clementine's code
+        x_ground_truth = jnp.array([-1., -1.5413]) # True parameters from Clementine's code
         # x_ground_truth = jnp.array([-2.0, -1.733]) # True parameters from Zheyang's paper
-        rng_key = jax.random.PRNGKey(14)
+        rng_key = jax.random.PRNGKey(14) # Fix random seed for data generation
         data = lotka_volterra_ms(init, x_ground_truth, rng_key)
         def q2(x, x_prime, rng_key):
             rng_key, _ = jax.random.split(rng_key)
             traj_1 = lotka_volterra_ws(init, x, rng_key)
             rng_key, _ = jax.random.split(rng_key)
             traj_2 = lotka_volterra_ws(init, x_prime, rng_key)
-            kernel_fn = jax.vmap(gaussian_kernel, in_axes=(0, 0, None))
-            part1 = kernel_fn(traj_1, traj_2, 1.0)
-            part2 = kernel_fn(traj_1, data, 1.0)
+            kernel_vmap = jax.vmap(kernel, in_axes=(0, 0))
+            part1 = kernel_vmap(traj_1, traj_2)
+            part2 = kernel_vmap(traj_1, data)
             return part1.sum() - 2 * part2.sum()
         
         problem_vlm = Problem_vlm(
@@ -163,25 +164,44 @@ def main(args):
             q2=q2,
             data=data
         )
+    elif args.dataset == 'mmd':
+        from utils.kernel import gaussian_kernel
+        kernel = gaussian_kernel(sigma=args.bandwidth)
+        def q2(x, x_prime, rng_key):
+            kernel_fn = jax.vmap(gaussian_kernel, in_axes=(0, 0, None))
+            part2 = kernel_fn(x, x_prime, 1.0)
+            return part2.sum()
+        
+        problem_mmd_flow = Problem_mmd_flow(
+            particle_d=2,
+            q2=q2,
+            distribution=Distribution(kernel)
+        )
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
     
     if args.dataset in ['boston', 'covertype']:
+        # This is mean-field neural network
         cfg = CFG(N=args.particle_num, steps=args.step_num, step_size=args.step_size, sigma=args.noise_scale, kernel=args.kernel,
               zeta=args.zeta, g=args.g, seed=args.seed, bandwidth=args.bandwidth, return_path=True)
         sim = MFLD_nn(problem=problem_nn, save_freq=data["num_batches_tr"], thinning=args.thinning, cfg=cfg, args=args)
         X0 = None
     elif args.dataset == 'vlm':
+        # This is post-Bayesian inference
         cfg = CFG(N=args.particle_num, steps=args.step_num, step_size=args.step_size, sigma=args.noise_scale, kernel=args.kernel,
               zeta=args.zeta, g=args.g, seed=args.seed, bandwidth=args.bandwidth, return_path=True)
         sim = MFLD_vlm(problem=problem_vlm, save_freq=1, thinning=args.thinning, cfg=cfg, args=args)
         X0 = jnp.stack([x_ground_truth] * args.particle_num, 0)
         rng_key, _ = jax.random.split(rng_key)
         X0 += 0.1 * jax.random.normal(rng_key, X0.shape)
+    elif args.dataset == 'mmd_flow':
+        # This is MMD flow
+        cfg = CFG(N=args.particle_num, steps=args.step_num, step_size=args.step_size, sigma=args.noise_scale, kernel=args.kernel,
+              zeta=args.zeta, g=args.g, seed=args.seed, bandwidth=args.bandwidth, return_path=True)
+        sim = MFLD_mmd_flow(problem=problem_mmd_flow, save_freq=1, thinning=args.thinning, cfg=cfg, args=args)
+        rng_key, _ = jax.random.split(rng_key)
+        X0 = jax.random.normal(rng_key, (args.particle_num, problem_mmd_flow.particle_d))
     xT, mmd_path, thin_original_mse_path = sim.simulate(x0=X0)
-
-    # Plotting code
-    T_plus_1, N, d = xT.shape
 
     if args.dataset == 'boston':
         eval_boston(sim, xT, data, loss)

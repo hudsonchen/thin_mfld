@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import jax
 from typing import NamedTuple
 from jaxtyping import Array 
-
+from utils.kernel import Distribution
 
 @dataclass(frozen=True)
 class Problem_nn:
@@ -23,6 +23,14 @@ class Problem_vlm:
     R1_prime: Callable[[Array], Array] = None
     q1: Callable[[Array], Array] = None
     q2: Callable[[Array, Array], Array] = None
-    data: Optional[Array] = None
+    data : Optional[Array] = None
 
+
+@dataclass(frozen=True)
+class Problem_mmd_flow:
+    particle_d: int
+    R1_prime: Callable[[Array], Array] = None
+    q1: Callable[[Array], Array] = None
+    q2: Callable[[Array, Array], Array] = None
+    distribution: Distribution = None
 
