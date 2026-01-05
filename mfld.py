@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import partial
 from typing import Callable, Optional
-import math
+import time
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -10,7 +10,6 @@ from jax import jit, vmap, grad, random, lax
 from utils.configs import CFG
 from utils.kernel import compute_mmd2
 from jaxtyping import Array 
-from jax_tqdm import scan_tqdm
 # from utils.kt import kt_compresspp
 from tqdm import tqdm
 from goodpoints.jax.compress import kt_compresspp
@@ -168,10 +167,13 @@ class MFLD_nn(MFLDBase):
         path = []
         mmd_path = []
         thin_original_mse_path = []
+        time_path = []
         for t in tqdm(range(self.cfg.steps)):
+            time_start = time.time()
             for i, (z, y) in enumerate(zip(self.data["Z"], self.data["y"])):
                 key_, subkey = random.split(key)
                 (x, key) , _ = self._step((x, (z, y), subkey), i)
+            time_elapsed = time.time() - time_start
 
             # Debug code compare MMD between x and thinned_x 
             (Z, y) = (self.data["Z"][0], self.data["y"][0])
@@ -187,12 +189,13 @@ class MFLD_nn(MFLDBase):
             path.append(x)
             mmd_path.append(mmd2)
             thin_original_mse_path.append(thin_original_mse)
+            time_path.append(time_elapsed)
 
         path = jnp.stack(path, axis=0)          # (steps, N, d)
         mmd_path = jnp.stack(mmd_path, axis=0)  # (steps, )
         thin_original_mse_path = jnp.stack(thin_original_mse_path, axis=0)  # (steps, )
-
-        return path, mmd_path, thin_original_mse_path
+        time_path = jnp.stack(time_path, axis=0)  # (steps, )
+        return path, mmd_path, thin_original_mse_path, time_path
 
 
 
@@ -229,7 +232,7 @@ class MFLD_vlm(MFLDBase):
             x_batch_all = x.reshape((-1, B, x.shape[1]))
             x_batch_new = 0. * x_batch_all
             for b in range(B):
-                key, subkey = random.split(key)
+                key, _ = random.split(key)
                 x_batch = x_batch_all[b, ...]
                 v = self.vector_field(x_batch, x_batch, key)
                 noise_scale = jnp.sqrt(2.0 * self.cfg.sigma * self.cfg.step_size)
@@ -250,10 +253,14 @@ class MFLD_vlm(MFLDBase):
         path = []
         mmd_path = []
         thin_original_mse_path = []
+        time_path = []
         for t in tqdm(range(self.cfg.steps)):
+            time_start = time.time()
             key_, subkey = random.split(key)
             (x, key) , _ = self._step((x, subkey), t)
+            time_elapsed = time.time() - time_start
 
+            ###########################################
             # Debug code compare MMD between x and thinned_x 
             thinned_x = self.thin_fn(x, key_)
             mmd2 = compute_mmd2(x, thinned_x, bandwidth=self.cfg.bandwidth)
@@ -267,12 +274,13 @@ class MFLD_vlm(MFLDBase):
             path.append(x)
             mmd_path.append(mmd2)
             thin_original_mse_path.append(thin_original_mse)
+            time_path.append(time_elapsed)
 
         path = jnp.stack(path, axis=0)          # (steps, N, d)
         mmd_path = jnp.stack(mmd_path, axis=0)  # (steps, )
         thin_original_mse_path = jnp.stack(thin_original_mse_path, axis=0)  # (steps, )
-
-        return path, mmd_path, thin_original_mse_path
+        time_path = jnp.stack(time_path, axis=0)  # (steps, )
+        return path, mmd_path, thin_original_mse_path, time_path
 
 
 class MFLD_mmd_flow(MFLDBase):
@@ -336,10 +344,14 @@ class MFLD_mmd_flow(MFLDBase):
         path = []
         mmd_path = []
         thin_original_mse_path = []
+        time_path = []
         for t in tqdm(range(self.cfg.steps)):
+            time_start = time.time()
             key_, subkey = random.split(key)
             (x, key) , _ = self._step((x, subkey), t)
+            time_elapsed = time.time() - time_start
 
+            ###########################################
             # Debug code compare MMD between x and thinned_x 
             thinned_x = self.thin_fn(x, key_)
             mmd2 = compute_mmd2(x, thinned_x, bandwidth=self.cfg.bandwidth)
@@ -353,9 +365,10 @@ class MFLD_mmd_flow(MFLDBase):
             path.append(x)
             mmd_path.append(mmd2)
             thin_original_mse_path.append(thin_original_mse)
+            time_path.append(time_elapsed)
 
         path = jnp.stack(path, axis=0)          # (steps, N, d)
         mmd_path = jnp.stack(mmd_path, axis=0)  # (steps, )
         thin_original_mse_path = jnp.stack(thin_original_mse_path, axis=0)  # (steps, )
-
-        return path, mmd_path, thin_original_mse_path
+        time_path = jnp.stack(time_path, axis=0)  # (steps, )
+        return path, mmd_path, thin_original_mse_path, time_path

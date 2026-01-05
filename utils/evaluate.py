@@ -27,7 +27,8 @@ def eval_boston(sim, xT, data, loss):
     return train_losses, test_losses
 
 
-def eval_covertype(args, sim, xT, data, loss, mmd_path, thin_original_mse_path):
+def eval_covertype(args, sim, xT, data, loss, mmd_path, thin_original_mse_path,
+                   time_path):
     train_losses, train_accs = [], []
     test_losses, test_accs = [], []
     for p in tqdm(xT):
@@ -64,11 +65,11 @@ def eval_covertype(args, sim, xT, data, loss, mmd_path, thin_original_mse_path):
     jnp.save(f'{args.save_path}/thin_original_mse_path.npy', thin_original_mse_path)
     jnp.save(f'{args.save_path}/train_losses.npy', train_losses)
     jnp.save(f'{args.save_path}/test_losses.npy', test_losses)
-
+    jnp.save(f'{args.save_path}/time_path.npy', time_path)
 
 def eval_vlm(args, sim, xT, data, init, x_ground_truth, 
              lotka_volterra_ws, lotka_volterra_ms, 
-             mmd_path, thin_original_mse_path):
+             mmd_path, thin_original_mse_path, time_path):
     rng_key = jax.random.PRNGKey(14)
     data_longer = lotka_volterra_ms(init, x_ground_truth, rng_key, end=100, noise_scale=0.)
     loss = jnp.zeros(xT.shape[0])
@@ -171,11 +172,11 @@ def eval_vlm(args, sim, xT, data, init, x_ground_truth,
 
     jnp.save(f'{args.save_path}/mmd_path.npy', mmd_path)
     jnp.save(f'{args.save_path}/thin_original_mse_path.npy', thin_original_mse_path)
-    
+    jnp.save(f'{args.save_path}/time_path.npy', time_path)
     return
 
 
-def eval_mmd_flow(args, sim, xT, data, mmd_path, thin_original_mse_path):
+def eval_mmd_flow(args, sim, xT, data, mmd_path, thin_original_mse_path, time_path):
     @jax.jit
     def mmd_func(Y):
         K_XX = sim.problem.distribution.mean_mean_embedding()
@@ -188,20 +189,24 @@ def eval_mmd_flow(args, sim, xT, data, mmd_path, thin_original_mse_path):
         mmd_value = mmd_func(particles)
         mmd_values = mmd_values.at[t].set(mmd_value)
 
-    plt.figure()
-    plt.plot(mmd_values, label='MMD Value')
-    plt.yscale('log')
-    plt.xlabel('Training Step')
-    plt.ylabel('MMD Value')
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    axes[0].plot(mmd_values)
+    axes[0].set_yscale('log')
+    axes[0].set_xlabel('Training Step')
+    axes[0].set_ylabel('MMD Value')
+    axes[1].plot(mmd_path)
+    axes[1].set_yscale('log')
+    axes[1].set_xlabel('Training Step')
+    axes[1].set_ylabel('MMD between thinned set and original set')
     plt.savefig(f'{args.save_path}/mmd_values_trajectory.png')
-    plt.close()
+    plt.close(fig)
 
     jnp.save(f'{args.save_path}/mmd_flow_trajectory.npy', xT)
     jnp.save(f'{args.save_path}/mmd_path.npy', mmd_path)
     jnp.save(f'{args.save_path}/thin_original_mse_path.npy', thin_original_mse_path)
     jnp.save(f'{args.save_path}/mmd_values_trajectory.npy', mmd_values)
-
-    save_animation_2d(args, xT, sim.kernel, sim.problem.distribution, rate=5, save_path=args.save_path)
+    jnp.save(f'{args.save_path}/time_path.npy', time_path)
+    save_animation_2d(args, xT, sim.kernel, sim.problem.distribution, rate=50, save_path=args.save_path)
     return 
 
 from matplotlib.animation import FuncAnimation

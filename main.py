@@ -4,11 +4,11 @@ from mfld import MFLD_nn, MFLD_vlm, MFLD_mmd_flow
 from utils.datasets import load_boston, load_covertype
 import jax.numpy as jnp
 import jax
-from tqdm import tqdm
 import time
 import os
 import argparse
 import pickle
+import time
 from utils.lotka_volterra import lotka_volterra_ws, lotka_volterra_ms
 from utils.evaluate import eval_boston, eval_covertype, eval_vlm, eval_mmd_flow
 
@@ -200,20 +200,17 @@ def main(args):
         sim = MFLD_mmd_flow(problem=problem_mmd_flow, save_freq=1, thinning=args.thinning, cfg=cfg, args=args)
         rng_key, _ = jax.random.split(rng_key)
         X0 = jax.random.normal(rng_key, (args.particle_num, problem_mmd_flow.particle_d))
-    xT, mmd_path, thin_original_mse_path = sim.simulate(x0=X0)
+    xT, mmd_path, thin_original_mse_path, time_path = sim.simulate(x0=X0)
 
-    if args.dataset == 'boston':
-        eval_boston(sim, xT, data, loss)
-
-    elif args.dataset == 'covertype':
-        eval_covertype(args, sim, xT, data, loss, mmd_path, thin_original_mse_path)
+    if args.dataset == 'covertype':
+        eval_covertype(args, sim, xT, data, loss, mmd_path, thin_original_mse_path, time_path)
 
     elif args.dataset == 'vlm':
         eval_vlm(args, sim, xT, data, init, x_ground_truth, 
                  lotka_volterra_ws, lotka_volterra_ms, 
-                 mmd_path, thin_original_mse_path)
+                 mmd_path, thin_original_mse_path, time_path)
     elif args.dataset == 'mmd_flow':
-        eval_mmd_flow(args, sim, xT, None, mmd_path, thin_original_mse_path)
+        eval_mmd_flow(args, sim, xT, None, mmd_path, thin_original_mse_path, time_path)
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
     
