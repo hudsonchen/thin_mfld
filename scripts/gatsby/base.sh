@@ -8,7 +8,6 @@
 #SBATCH --output=thinned_mfld_%A_%a.out
 #SBATCH --error=thinned_mfld_%A_%a.out
 #SBATCH --ntasks=1
-#SBATCH --nodes=1
 
 
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
