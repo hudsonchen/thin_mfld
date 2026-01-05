@@ -23,43 +23,43 @@ OUT_FILE="$HOME/thinned_mfld/scripts/gatsby/mmd_flow_configs.txt"
 #   done
 # done
 
-for seed in {0..4}
-do
-  for thinning in false kt random
-  do
-    for particle_num in 64 256 1024
-    do
-      for zeta in 0.0
-        do
-          echo "--seed $seed --dataset mmd_flow --particle_num $particle_num --step_size 1.0 --noise_scale 1e-4 --step_num 15000 --thinning $thinning --kernel gaussian --zeta $zeta" >> "$OUT_FILE"
-        done
-    done
-  done
-done
+# for seed in {0..4}
+# do
+#   for thinning in false kt random
+#   do
+#     for particle_num in 64 256 1024
+#     do
+#       for zeta in 0.0
+#         do
+#           echo "--seed $seed --dataset mmd_flow --particle_num $particle_num --step_size 1.0 --noise_scale 1e-4 --step_num 15000 --thinning $thinning --kernel gaussian --zeta $zeta" >> "$OUT_FILE"
+#         done
+#     done
+#   done
+# done
 
-for seed in {0..4}
-do
-  for thinning in kt random
-  do
-    for particle_num in 4096
-    do
-      for zeta in 0.0
-        do
-          echo "--seed $seed --dataset mmd_flow --particle_num $particle_num --step_size 1.0 --noise_scale 1e-4 --step_num 15000 --thinning $thinning --kernel gaussian --zeta $zeta" >> "$OUT_FILE"
-        done
-    done
-  done
-done
+# for seed in {0..4}
+# do
+#   for thinning in kt random
+#   do
+#     for particle_num in 4096
+#     do
+#       for zeta in 0.0
+#         do
+#           echo "--seed $seed --dataset mmd_flow --particle_num $particle_num --step_size 1.0 --noise_scale 1e-4 --step_num 15000 --thinning $thinning --kernel gaussian --zeta $zeta" >> "$OUT_FILE"
+#         done
+#     done
+#   done
+# done
 
 for seed in {0..4}
 do
   for thinning in rbm
   do
-    for particle_num in 64 256 1024
+    for particle_num in 64 256 1024 4096
     do
       for zeta in 0.0
         do
-          echo "--seed $seed --dataset mmd_flow --particle_num $particle_num --step_size 1.0 --noise_scale 0.0 --step_num 100000 --thinning $thinning --kernel gaussian --zeta $zeta" >> "$OUT_FILE"
+          echo "--seed $seed --dataset mmd_flow --particle_num $particle_num --step_size 1.0 --noise_scale 0.0 --step_num 15000 --thinning $thinning --kernel gaussian --zeta $zeta" >> "$OUT_FILE"
         done
     done
   done
