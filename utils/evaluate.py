@@ -206,48 +206,120 @@ def eval_mmd_flow(args, sim, xT, data, mmd_path, thin_original_mse_path, time_pa
     jnp.save(f'{args.save_path}/thin_original_mse_path.npy', thin_original_mse_path)
     jnp.save(f'{args.save_path}/mmd_values_trajectory.npy', mmd_values)
     jnp.save(f'{args.save_path}/time_path.npy', time_path)
-    save_animation_2d(args, xT, sim.kernel, sim.problem.distribution, rate=50, save_path=args.save_path)
+    save_animation_2d(xT, sim.problem.distribution, save_path=args.save_path)
     return 
 
+import numpy as np
+import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
-import matplotlib.cm as cm
-import matplotlib
 
-def save_animation_2d(args, trajectory, kernel, distribution, rate, save_path):
-    T = trajectory.shape[0]
-    Y = trajectory[0, :, :]
+def save_animation_2d(
+    trajectory,
+    distribution,
+    save_path,
+    duration_sec=6.0,   # fixed total video length
+    fps=20,             # fixed fps
+    interval_ms=50,     # display interval (doesn't affect saved mp4 if fps is set)
+    resolution=100,
+    xlim=(-5, 5),
+    ylim=(-5, 5),
+):
+    """
+    Save an animation with fixed duration, regardless of trajectory length.
 
-    num_timesteps = trajectory.shape[0]
-    num_frames = max(num_timesteps // rate, 1)
+    trajectory: array of shape (T, N, 2)
+    duration_sec: desired video length in seconds
+    fps: frames per second for the saved mp4
+    """
+    T = int(trajectory.shape[0])
+    if T <= 0:
+        raise ValueError("trajectory must have at least one timestep")
 
-    def update(frame):
-        _animate_scatter.set_offsets(trajectory[frame * rate, :, :])
-        return (_animate_scatter,)
+    # Fixed number of frames in the output video
+    num_frames = max(int(round(duration_sec * fps)), 1)
 
-    # create initial plot
-    animate_fig, animate_ax = plt.subplots()
-    animate_ax.set_xlim(-5, 5)
-    animate_ax.set_ylim(-5, 5)
-    x_range = (-5, 5)
-    y_range = (-5, 5)
-    resolution = 100
-    x_vals = jnp.linspace(x_range[0], x_range[1], resolution)
-    y_vals = jnp.linspace(y_range[0], y_range[1], resolution)
-    X, Y = jnp.meshgrid(x_vals, y_vals)
-    grid = jnp.stack([X.ravel(), Y.ravel()], axis=1)
-    logpdf = jnp.log(distribution.pdf(grid).reshape(resolution, resolution))
-    plt.imshow(logpdf, extent=(-5, 5, -5, 5), origin='lower')
+    # Map frame indices -> trajectory indices (monotone, covers [0, T-1])
+    if num_frames == 1:
+        t_idx = np.array([0], dtype=int)
+    else:
+        t_idx = np.linspace(0, T - 1, num_frames)
+        t_idx = np.round(t_idx).astype(int)
+        t_idx = np.clip(t_idx, 0, T - 1)
 
-    _animate_scatter = animate_ax.scatter(trajectory[0, :, 1], trajectory[0, :, 0], label='source')
+    # ---- create initial plot ----
+    fig, ax = plt.subplots()
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
+
+    # Background: logpdf on a grid
+    x_vals = np.linspace(xlim[0], xlim[1], resolution)
+    y_vals = np.linspace(ylim[0], ylim[1], resolution)
+    X, Y = np.meshgrid(x_vals, y_vals)
+    grid = np.stack([X.ravel(), Y.ravel()], axis=1)
+
+    # If distribution.pdf expects jax arrays, swap np -> jnp here; otherwise keep numpy.
+    logpdf = np.log(distribution.pdf(grid)).reshape(resolution, resolution)
+
+    ax.imshow(logpdf, extent=(xlim[0], xlim[1], ylim[0], ylim[1]), origin="lower")
+
+    # NOTE: you had (y,x) swapped in scatter; keep consistent with your original intent.
+    scat = ax.scatter(trajectory[0, :, 1], trajectory[0, :, 0], label="source")
+
+    def update(frame_j):
+        t = t_idx[frame_j]
+        # set_offsets expects (N, 2) with columns [x, y]
+        pts = np.asarray(trajectory[t])
+        scat.set_offsets(np.column_stack([pts[:, 1], pts[:, 0]]))
+        return (scat,)
 
     ani = FuncAnimation(
-        animate_fig,
+        fig,
         update,
         frames=num_frames,
-        # init_func=init,
         blit=True,
-        interval=50,
+        interval=interval_ms,
     )
-    ani.save(f'{save_path}/animation.mp4',
-                   writer='ffmpeg', fps=20)
-    return    
+
+    ani.save(f"{save_path}/animation.mp4", writer="ffmpeg", fps=fps)
+    plt.close(fig)
+    return
+
+
+# def save_animation_2d(args, trajectory, kernel, distribution, rate, save_path):
+#     T = trajectory.shape[0]
+#     Y = trajectory[0, :, :]
+
+#     num_timesteps = trajectory.shape[0]
+#     num_frames = max(num_timesteps // rate, 1)
+
+#     def update(frame):
+#         _animate_scatter.set_offsets(trajectory[frame * rate, :, :])
+#         return (_animate_scatter,)
+
+#     # create initial plot
+#     animate_fig, animate_ax = plt.subplots()
+#     animate_ax.set_xlim(-5, 5)
+#     animate_ax.set_ylim(-5, 5)
+#     x_range = (-5, 5)
+#     y_range = (-5, 5)
+#     resolution = 100
+#     x_vals = jnp.linspace(x_range[0], x_range[1], resolution)
+#     y_vals = jnp.linspace(y_range[0], y_range[1], resolution)
+#     X, Y = jnp.meshgrid(x_vals, y_vals)
+#     grid = jnp.stack([X.ravel(), Y.ravel()], axis=1)
+#     logpdf = jnp.log(distribution.pdf(grid).reshape(resolution, resolution))
+#     plt.imshow(logpdf, extent=(-5, 5, -5, 5), origin='lower')
+
+#     _animate_scatter = animate_ax.scatter(trajectory[0, :, 1], trajectory[0, :, 0], label='source')
+
+#     ani = FuncAnimation(
+#         animate_fig,
+#         update,
+#         frames=num_frames,
+#         # init_func=init,
+#         blit=True,
+#         interval=50,
+#     )
+#     ani.save(f'{save_path}/animation.mp4',
+#                    writer='ffmpeg', fps=20)
+#     return    

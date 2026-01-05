@@ -168,8 +168,7 @@ def main(args):
         from utils.kernel import gaussian_kernel
         kernel = gaussian_kernel(sigma=args.bandwidth)
         def q2(x, x_prime, rng_key):
-            part2 = kernel(x, x_prime)
-            return part2
+            return kernel(x, x_prime)
         
         problem_mmd_flow = Problem_mmd_flow(
             particle_d=2,

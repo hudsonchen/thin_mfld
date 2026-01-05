@@ -31,7 +31,7 @@ do
     do
       for zeta in 0.0
         do
-          echo "--seed $seed --dataset mmd_flow --particle_num $particle_num --step_size 0.1 --noise_scale 0.0 --step_num 100000 --thinning $thinning --kernel gaussian --zeta $zeta" >> "$OUT_FILE"
+          echo "--seed $seed --dataset mmd_flow --particle_num $particle_num --step_size 1.0 --noise_scale 1e-4 --step_num 15000 --thinning $thinning --kernel gaussian --zeta $zeta" >> "$OUT_FILE"
         done
     done
   done
@@ -45,7 +45,7 @@ do
     do
       for zeta in 0.0
         do
-          echo "--seed $seed --dataset mmd_flow --particle_num $particle_num --step_size 0.1 --noise_scale 0.0 --step_num 100000 --thinning $thinning --kernel gaussian --zeta $zeta" >> "$OUT_FILE"
+          echo "--seed $seed --dataset mmd_flow --particle_num $particle_num --step_size 1.0 --noise_scale 1e-4 --step_num 15000 --thinning $thinning --kernel gaussian --zeta $zeta" >> "$OUT_FILE"
         done
     done
   done
@@ -59,7 +59,7 @@ do
     do
       for zeta in 0.0
         do
-          echo "--seed $seed --dataset mmd_flow --particle_num $particle_num --step_size 0.1 --noise_scale 0.0 --step_num 100000 --thinning $thinning --kernel gaussian --zeta $zeta" >> "$OUT_FILE"
+          echo "--seed $seed --dataset mmd_flow --particle_num $particle_num --step_size 1.0 --noise_scale 0.0 --step_num 100000 --thinning $thinning --kernel gaussian --zeta $zeta" >> "$OUT_FILE"
         done
     done
   done
