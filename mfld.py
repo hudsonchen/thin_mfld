@@ -228,19 +228,19 @@ class MFLD_vlm(MFLDBase):
             x_next = x - self.cfg.step_size * v + noise
         elif self.args.thinning == 'rbm':
             # Random batch method 
-            B = jnp.sqrt(x.shape[0]).astype(int)
-            x_batch_all = x.reshape((-1, B, x.shape[1]))
-            x_batch_new = 0. * x_batch_all
-            for b in range(B):
-                key, _ = random.split(key)
-                x_batch = x_batch_all[b, ...]
-                v = self.vector_field(x_batch, x_batch, key)
-                noise_scale = jnp.sqrt(2.0 * self.cfg.sigma * self.cfg.step_size)
-                key, _ = random.split(key)
-                noise = noise_scale * random.normal(key, shape=x_batch.shape)
-                x_batch = x_batch - self.cfg.step_size * v + noise
-                x_batch_new = x_batch_new.at[b, ...].set(x_batch)
-            x_next = x_batch_new.reshape((-1, x.shape[1]))
+            N, d = x.shape
+            B = jnp.sqrt(N).astype(int)
+            x_batch = x.reshape((B, B, d))  # (num_batches=B, batch_size=B, d)
+            key, subkey = random.split(key)
+            keys = random.split(subkey, B)
+
+            def vf_one_batch(xb, k):
+                # xb: (B, d)
+                return self.vector_field(xb, xb, k)  # -> (B, d)
+
+            v_batch = jax.vmap(vf_one_batch, in_axes=(0, 0))(x_batch, keys)  # (B, B, d)
+            v = v_batch.reshape((N, d))
+            x_next = x - self.cfg.step_size * v
         return (x_next, key), x_next
     
     def simulate(self, x0: Optional[Array] = None) -> Array:
@@ -318,19 +318,6 @@ class MFLD_mmd_flow(MFLDBase):
             x_next = x - self.cfg.step_size * v + noise
         elif self.args.thinning == 'rbm':
             # Random batch method 
-            # B = jnp.sqrt(x.shape[0]).astype(int)
-            # x_batch_all = x.reshape((-1, B, x.shape[1]))
-            # x_batch_new = 0. * x_batch_all
-            # for b in range(B):
-            #     key, subkey = random.split(key)
-            #     x_batch = x_batch_all[b, ...]
-            #     v = self.vector_field(x_batch, x_batch, key)
-            #     noise_scale = jnp.sqrt(2.0 * self.cfg.sigma * self.cfg.step_size)
-            #     key, _ = random.split(key)
-            #     noise = noise_scale * random.normal(key, shape=x_batch.shape)
-            #     x_batch = x_batch - self.cfg.step_size * v + noise
-            #     x_batch_new = x_batch_new.at[b, ...].set(x_batch)
-            # x_next = x_batch_new.reshape((-1, x.shape[1]))
             N, d = x.shape
             B = jnp.sqrt(N).astype(int)
             x_batch = x.reshape((B, B, d))  # (num_batches=B, batch_size=B, d)

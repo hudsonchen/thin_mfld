@@ -23,11 +23,11 @@ OUT_FILE="$HOME/thinned_mfld/scripts/gatsby/vlm_configs.txt"
 #   done
 # done
 
-for seed in {0..19}
+for seed in {0..9}
 do
   for thinning in rbm
   do
-    for particle_num in 16 64 256
+    for particle_num in 16 64 256 1024
     do
       for zeta in 1.0 0.1
         do
