@@ -202,7 +202,7 @@ def eval_mmd_flow(args, sim, xT, data, mmd_path, thin_original_mse_path, time_pa
     plt.close(fig)
 
     freq = 10
-    jnp.save(f'{args.save_path}/mmd_flow_trajectory.npy', xT[::freq, :])
+    jnp.save(f'{args.save_path}/mmd_flow_trajectory.npy', xT[::freq, :, :])
     jnp.save(f'{args.save_path}/mmd_path.npy', mmd_path)
     jnp.save(f'{args.save_path}/thin_original_mse_path.npy', thin_original_mse_path)
     jnp.save(f'{args.save_path}/mmd_values_trajectory.npy', mmd_values)
