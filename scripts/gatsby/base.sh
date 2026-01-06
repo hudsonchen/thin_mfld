@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -p gpu
+#SBATCH -p cpu
 #SBATCH --job-name=thinned_mfld
 #SBATCH --time=5:00:00        
 #SBATCH --cpus-per-task=16
