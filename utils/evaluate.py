@@ -206,7 +206,7 @@ def eval_mmd_flow(args, sim, xT, data, mmd_path, thin_original_mse_path, time_pa
     jnp.save(f'{args.save_path}/thin_original_mse_path.npy', thin_original_mse_path)
     jnp.save(f'{args.save_path}/mmd_values_trajectory.npy', mmd_values)
     jnp.save(f'{args.save_path}/time_path.npy', time_path)
-    save_animation_2d(xT, sim.problem.distribution, save_path=args.save_path)
+    # save_animation_2d(xT, sim.problem.distribution, save_path=args.save_path)
     return 
 
 import numpy as np
