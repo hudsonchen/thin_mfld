@@ -198,7 +198,7 @@ def main(args):
               zeta=args.zeta, g=args.g, seed=args.seed, bandwidth=args.bandwidth, return_path=True)
         sim = MFLD_mmd_flow(problem=problem_mmd_flow, save_freq=1, thinning=args.thinning, cfg=cfg, args=args)
         rng_key, _ = jax.random.split(rng_key)
-        X0 = jax.random.normal(rng_key, (args.particle_num, problem_mmd_flow.particle_d))
+        X0 = 2.0 * jax.random.normal(rng_key, (args.particle_num, problem_mmd_flow.particle_d))
     xT, mmd_path, thin_original_mse_path, time_path = sim.simulate(x0=X0)
 
     if args.dataset == 'covertype':

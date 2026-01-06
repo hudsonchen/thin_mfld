@@ -12,8 +12,8 @@ from utils.kernel import compute_mmd2
 from jaxtyping import Array 
 # from utils.kt import kt_compresspp
 from tqdm import tqdm
-from goodpoints.jax.compress import kt_compresspp
 from goodpoints import compress
+from goodpoints.jax.compress import kt_compresspp
 from goodpoints.jax.sliceable_points import SliceablePoints
 
 
@@ -32,14 +32,19 @@ def initialize(key, d_in, d_hidden, d_out):
     return W1, b1, W2
 
 
-# def uncentered_matern_32_kernel(points_x, points_y, l):
-#     X, Y = points_x.get("X"), points_y.get("X")  # (N_x, d), (N_y, d)
-#     # diff = X[:, None, :] - Y[None, :, :]         # (N_x, N_y, d)
-#     diff = X - Y
-#     dists = jnp.linalg.norm(diff, axis=-1)       # (N_x, N_y)
-#     sqrt3_r = jnp.sqrt(3.0) * dists / l
-#     return (1.0 + sqrt3_r) * jnp.exp(-sqrt3_r)   # (N_x, N_y)
+def uncentered_matern_32_kernel(points_x, points_y, l):
+    X, Y = points_x.get("X"), points_y.get("X")  # (N_x, d), (N_y, d)
+    # diff = X[:, None, :] - Y[None, :, :]         # (N_x, N_y, d)
+    diff = X - Y
+    dists = jnp.linalg.norm(diff, axis=-1)       # (N_x, N_y)
+    sqrt3_r = jnp.sqrt(3.0) * dists / l
+    return (1.0 + sqrt3_r) * jnp.exp(-sqrt3_r)   # (N_x, N_y)
 
+@jax.jit
+def uncentered_gaussian_kernel(points_x, points_y, l):
+    x, y = points_x.get("p"), points_y.get("p")
+    k_xy = jnp.exp(-0.5 * jnp.sum((x - y) ** 2, axis=-1) / (l ** 2))
+    return k_xy
 
 class MFLDBase(ABC):
     def __init__(self, problem, thinning: str, save_freq: int, cfg: CFG, args):
@@ -64,16 +69,18 @@ class MFLDBase(ABC):
         if thinning == 'kt':
             # This is the jax version of kt_compresspp, which is very slow.
             #
-            # kernel_fn = partial(uncentered_matern_32_kernel, l=float(1.0))
-            # rng = np.random.default_rng(self.seed)
-            # def thin_fn(x, key):
-            #     points = SliceablePoints({"X": x})  
-            #     coresets = kt_compresspp(kernel_fn, points, w=jnp.ones(self.cfg.N) / self.cfg.N, 
-            #                  rng_gen=rng, inflate_size=int(self.cfg.N), g=0, delta=0.5)
+            # kernel_fn = partial(uncentered_gaussian_kernel, l=float(1.0))
+            
+            # def thin_fn(x, key):               
+            #     points = SliceablePoints({"p": x})  
+            #     rng = np.random.default_rng(int(key[0]))
+            #     coresets = kt_compresspp(kernel_fn, points, w=np.ones(x.shape[0]) / x.shape[0], 
+            #                  rng_gen=rng, inflate_size=x.shape[0], g=0)
             #     return x[coresets, :]
 
             # This is the cython version which is fast
             def thin_fn(x, rng_key):
+                rng_key, _ = jax.random.split(rng_key)
                 seed = jax.random.randint(rng_key, (), 0, 2**31 - 1).item()
                 x_cpu = np.array(np.asarray(x))
                 coresets = compress.compresspp_kt(x_cpu, kernel_type=self.kernel_type.encode("utf-8"), k_params=k_params, seed=seed, g=self.cfg.g)
@@ -331,7 +338,7 @@ class MFLD_mmd_flow(MFLDBase):
             v_batch = jax.vmap(vf_one_batch, in_axes=(0, 0))(x_batch, keys)  # (B, B, d)
             v = v_batch.reshape((N, d))
             x_next = x - self.cfg.step_size * v
-        return (x_next, key), x_next
+        return (x_next, key), thinned_x
     
     def simulate(self, x0: Optional[Array] = None) -> Array:
         key = random.PRNGKey(self.cfg.seed)
@@ -347,12 +354,11 @@ class MFLD_mmd_flow(MFLDBase):
         for t in tqdm(range(self.cfg.steps)):
             time_start = time.time()
             key_, subkey = random.split(key)
-            (x, key) , _ = self._step((x, subkey), t)
+            (x, key) , thinned_x = self._step((x, subkey), t)
             time_elapsed = time.time() - time_start
 
             ###########################################
             # Debug code compare MMD between x and thinned_x 
-            thinned_x = self.thin_fn(x, key_)
             mmd2 = compute_mmd2(x, thinned_x, bandwidth=self.cfg.bandwidth)
 
             # thinned_output = self._vm_grad_q2(x, thinned_x)
