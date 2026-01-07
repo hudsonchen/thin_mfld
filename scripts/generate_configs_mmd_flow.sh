@@ -15,7 +15,7 @@ do
     do
       for zeta in 0.0
         do
-          for noise_scale in 1e-2
+          for noise_scale in 1e-3
             do
               echo "--seed $seed --dataset mmd_flow --particle_num $particle_num --step_size 1.0 --noise_scale $noise_scale --step_num 15000 --thinning $thinning --kernel gaussian --zeta $zeta" >> "$OUT_FILE"
             done
@@ -32,7 +32,7 @@ do
     do
       for zeta in 0.0
         do
-        for noise_scale in 1e-2
+        for noise_scale in 1e-3
           do
             echo "--seed $seed --dataset mmd_flow --particle_num $particle_num --step_size 1.0 --noise_scale $noise_scale --step_num 15000 --thinning $thinning --kernel gaussian --zeta $zeta" >> "$OUT_FILE"
           done
@@ -49,7 +49,7 @@ do
     do
       for zeta in 0.0
         do
-          for noise_scale in 1e-2
+          for noise_scale in 1e-3
             do
               echo "--seed $seed --dataset mmd_flow --particle_num $particle_num --step_size 1.0 --noise_scale $noise_scale --step_num 15000 --thinning $thinning --kernel gaussian --zeta $zeta" >> "$OUT_FILE"
             done
