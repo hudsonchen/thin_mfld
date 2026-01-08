@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -p gpu
 #SBATCH --job-name=thinned_mfld
-#SBATCH --time=5:00:00        
+#SBATCH --time=10:00:00        
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=20G
 #SBATCH --chdir=/nfs/ghome/live/jwornbard/hudson
