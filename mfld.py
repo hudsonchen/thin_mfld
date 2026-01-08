@@ -248,6 +248,7 @@ class MFLD_vlm(MFLDBase):
 
             v_batch = jax.vmap(vf_one_batch, in_axes=(0, 0))(x_batch, keys)  # (B, B, d)
             v = v_batch.reshape((N, d))
+            noise_scale = jnp.sqrt(2.0 * self.cfg.sigma * self.cfg.step_size)
             noise = noise_scale * random.normal(key, shape=x.shape)
             x_next = x - self.cfg.step_size * v + noise
         return (x_next, key), thinned_x
@@ -339,6 +340,7 @@ class MFLD_mmd_flow(MFLDBase):
 
             v_batch = jax.vmap(vf_one_batch, in_axes=(0, 0))(x_batch, keys)  # (B, B, d)
             v = v_batch.reshape((N, d))
+            noise_scale = jnp.sqrt(2.0 * self.cfg.sigma * self.cfg.step_size)
             noise = noise_scale * random.normal(key, shape=x.shape)
             x_next = x - self.cfg.step_size * v + noise
         return (x_next, key), thinned_x
