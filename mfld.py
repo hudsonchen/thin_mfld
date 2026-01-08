@@ -235,6 +235,7 @@ class MFLD_vlm(MFLDBase):
             x_next = x - self.cfg.step_size * v + noise
         elif self.args.thinning == 'rbm':
             # Random batch method 
+            thinned_x = self.thin_fn(x, key)
             N, d = x.shape
             B = jnp.sqrt(N).astype(int)
             x_batch = x.reshape((B, B, d))  # (num_batches=B, batch_size=B, d)
@@ -248,7 +249,7 @@ class MFLD_vlm(MFLDBase):
             v_batch = jax.vmap(vf_one_batch, in_axes=(0, 0))(x_batch, keys)  # (B, B, d)
             v = v_batch.reshape((N, d))
             x_next = x - self.cfg.step_size * v
-        return (x_next, key), x_next
+        return (x_next, key), thinned_x
     
     def simulate(self, x0: Optional[Array] = None) -> Array:
         key = random.PRNGKey(self.cfg.seed)
@@ -264,12 +265,11 @@ class MFLD_vlm(MFLDBase):
         for t in tqdm(range(self.cfg.steps)):
             time_start = time.time()
             key_, subkey = random.split(key)
-            (x, key) , _ = self._step((x, subkey), t)
+            (x, key) , thinned_x = self._step((x, subkey), t)
             time_elapsed = time.time() - time_start
 
             ###########################################
             # Debug code compare MMD between x and thinned_x 
-            thinned_x = self.thin_fn(x, key_)
             mmd2 = compute_mmd2(x, thinned_x, bandwidth=self.cfg.bandwidth)
 
             # thinned_output = self._vm_grad_q2(x, thinned_x)
@@ -325,6 +325,7 @@ class MFLD_mmd_flow(MFLDBase):
             x_next = x - self.cfg.step_size * v + noise
         elif self.args.thinning == 'rbm':
             # Random batch method 
+            thinned_x = self.thin_fn(x, key)
             N, d = x.shape
             B = jnp.sqrt(N).astype(int)
             x_batch = x.reshape((B, B, d))  # (num_batches=B, batch_size=B, d)
