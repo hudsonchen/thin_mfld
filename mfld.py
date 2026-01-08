@@ -248,7 +248,8 @@ class MFLD_vlm(MFLDBase):
 
             v_batch = jax.vmap(vf_one_batch, in_axes=(0, 0))(x_batch, keys)  # (B, B, d)
             v = v_batch.reshape((N, d))
-            x_next = x - self.cfg.step_size * v
+            noise = noise_scale * random.normal(key, shape=x.shape)
+            x_next = x - self.cfg.step_size * v + noise
         return (x_next, key), thinned_x
     
     def simulate(self, x0: Optional[Array] = None) -> Array:
@@ -338,7 +339,8 @@ class MFLD_mmd_flow(MFLDBase):
 
             v_batch = jax.vmap(vf_one_batch, in_axes=(0, 0))(x_batch, keys)  # (B, B, d)
             v = v_batch.reshape((N, d))
-            x_next = x - self.cfg.step_size * v
+            noise = noise_scale * random.normal(key, shape=x.shape)
+            x_next = x - self.cfg.step_size * v + noise
         return (x_next, key), thinned_x
     
     def simulate(self, x0: Optional[Array] = None) -> Array:
