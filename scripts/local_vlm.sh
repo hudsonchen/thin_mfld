@@ -1,6 +1,6 @@
 for seed in {0..4}
 do
-  for thinning in false
+  for thinning in kt random rbm
   do
     for particle_num in 4096
     do
