@@ -2,7 +2,7 @@
 #SBATCH -p cpu
 #SBATCH --job-name=thinned_mfld
 #SBATCH --time=10:00:00        
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=32
 #SBATCH --mem=20G
 #SBATCH --chdir=/nfs/ghome/live/jwornbard/hudson
 #SBATCH --output=thinned_mfld_%A_%a.out
