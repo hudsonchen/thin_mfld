@@ -2,7 +2,7 @@
 
 # Output config file
 # OUT_FILE="$HOME/thinned_mfld/scripts/gatsby/vlm_configs.txt"
-OUT_FILE="$HOME/thinned_mfld/scripts/myriad/vlm_configs.txt"
+OUT_FILE="$HOME/thinned_mfld/scripts/myriad/vlm_configs_large.txt"
 
 # Truncate the file first
 > "$OUT_FILE"
@@ -28,7 +28,7 @@ for seed in {10..20}
 do
   for thinning in kt false rbm random
   do
-    for particle_num in 16 64 256
+    for particle_num in 1024
     do
       for zeta in 0.1
         do

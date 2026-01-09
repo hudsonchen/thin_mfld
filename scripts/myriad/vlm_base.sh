@@ -1,6 +1,6 @@
-#$ -l mem=20G
-#$ -pe smp 16
-#$ -l h_rt=5:00:00
+#$ -l mem=40G
+#$ -pe smp 32
+#$ -l h_rt=8:00:00
 #$ -R y
 #$ -S /bin/bash
 #$ -wd /home/ucabzc9/Scratch/
