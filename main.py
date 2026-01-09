@@ -208,6 +208,8 @@ def main(args):
         eval_vlm(args, sim, xT, data, init, x_ground_truth, 
                  lotka_volterra_ws, lotka_volterra_ms, 
                  mmd_path, thin_original_mse_path, time_path)
+        # jnp.save(f'{args.save_path}/time_path.npy', time_path)
+
     elif args.dataset == 'mmd_flow':
         eval_mmd_flow(args, sim, xT, None, mmd_path, thin_original_mse_path, time_path)
     else:

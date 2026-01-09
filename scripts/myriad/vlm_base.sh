@@ -1,4 +1,4 @@
-#$ -l mem=10G
+#$ -l mem=20G
 #$ -pe smp 16
 #$ -l h_rt=5:00:00
 #$ -R y
