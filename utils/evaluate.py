@@ -88,11 +88,27 @@ def eval_vlm(args, sim, xT, data, init, x_ground_truth,
         alpha = 2.0
         beta = 1.0
         k = lambda x,y : recommended_kernel(x,y,l,alpha,beta,1.0)
+        # def S_PQ(X):
+        #     N = X.shape[0]
+        #     keys_outer = jax.random.split(rng_key, num=N)                # (N, 2)
+        #     keys_mat = jax.vmap(lambda keys: jax.random.split(keys, num=N))(keys_outer)  # (N, N, 2)
+        #     return -args.zeta * X + sim._vm_grad_q2(X, X, keys_mat).mean(axis=1)
+        
         def S_PQ(X):
-            N = X.shape[0]
-            keys_outer = jax.random.split(rng_key, num=N)                # (N, 2)
-            keys_mat = jax.vmap(lambda keys: jax.random.split(keys, num=N))(keys_outer)  # (N, N, 2)
-            return -args.zeta * X + sim._vm_grad_q2(X, X, keys_mat).mean(axis=1)
+            N, d = X.shape
+            bs = int(jnp.sqrt(N))
+            G = jnp.zeros((bs, bs, d), dtype=X.dtype)
+            X_batched = X.reshape((-1, bs, d))
+            for i in tqdm(range(X_batched.shape[0])):
+                X_batch = X_batched[i, :]
+                key_batch = jax.random.split(jax.random.fold_in(rng_key, i), num=bs)  # (bs, 2)
+                keys = jax.vmap(lambda k: jax.random.split(k, num=N))(key_batch)
+
+                gi = sim._vm_grad_q2(X_batch, X, keys).mean(axis=1)
+
+                G = G.at[i, :].set(gi)
+            G = G.reshape((N, d))
+            return -args.zeta * X + G
         k_pq = GradientKernel(S_PQ, k)
         kgd = KernelGradientDiscrepancy(k_pq)
         kgd_value = kgd.evaluate(particles)
