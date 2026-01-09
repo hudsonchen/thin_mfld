@@ -28,11 +28,11 @@ for seed in {10..20}
 do
   for thinning in kt false rbm random
   do
-    for particle_num in 16 64 256 1024
+    for particle_num in 16 64 256
     do
       for zeta in 0.1
         do
-          echo "--seed $seed --dataset vlm --particle_num $particle_num --step_size 0.0001 --noise_scale 0.001 --step_num 200 --thinning $thinning --kernel sobolev --zeta $zeta" >> "$OUT_FILE"
+          echo "--seed $seed --dataset vlm --particle_num $particle_num --step_size 0.0001 --noise_scale 0.001 --step_num 150 --thinning $thinning --kernel sobolev --zeta $zeta" >> "$OUT_FILE"
         done
     done
   done
