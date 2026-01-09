@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Output config file
-# OUT_FILE="$HOME/thinned_mfld/scripts/gatsby/vlm_configs.txt"
-OUT_FILE="$HOME/thinned_mfld/scripts/myriad/vlm_configs_large.txt"
+OUT_FILE="$HOME/thinned_mfld/scripts/gatsby/vlm_configs.txt"
+# OUT_FILE="$HOME/thinned_mfld/scripts/myriad/vlm_configs_large.txt"
 
 # Truncate the file first
 > "$OUT_FILE"
@@ -24,11 +24,11 @@ OUT_FILE="$HOME/thinned_mfld/scripts/myriad/vlm_configs_large.txt"
 #   done
 # done
 
-for seed in {10..20}
+for seed in {0..10}
 do
-  for thinning in kt false rbm random
+  for thinning in kt rbm random
   do
-    for particle_num in 1024
+    for particle_num in 4096
     do
       for zeta in 0.1
         do
