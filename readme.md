@@ -154,14 +154,18 @@ Outputs are written into directory trees under `results/`.
 Completed runs are renamed with a `__complete` suffix.
 
 
-## Notes
-
-- Some runner scripts include user-specific path logic (`os.chdir(...)`) for specific machines. If needed, remove or adapt those sections for your environment.
-- For reproducibility, keep `--seed` fixed and record `configs` from each run.
-
 ## Citation
 
 If you use this code, please cite the corresponding paper:
 
-- https://arxiv.org/pdf/2605.28589
+```bibtex
+@inproceedings{chen2026thinned,
+	title     = {Thinned Mean Field Langevin Dynamics},
+	author    = {Chen, Zonghao and Kanagawa, Heishiro and Briol, Fran{\c{c}}ois-Xavier and Oates, Chris J. and Mackey, Lester},
+	booktitle = {Proceedings of the International Conference on Machine Learning (ICML)},
+	year      = {2026},
+	doi       = {10.48550/arXiv.2605.28589},
+	url       = {https://arxiv.org/abs/2605.28589}
+}
+```
 
