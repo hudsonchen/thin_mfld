@@ -145,7 +145,8 @@ For KT thinning, supported variants include:
 - `--kt_function compress_kt`
 - `--kt_function compresspp_kt`
 
-Use `--g` to control KT depth/level, and optionally `--skip_swap`.
+Use `--g` to control KT oversampling parameter. 
+`--kt_function compress_kt --skip_swap` corresponds to KT-split-Compress and `--kt_function compress_kt` corresponds to KT-Compress reported in the paper.
 
 ## Outputs
 
