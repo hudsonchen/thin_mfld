@@ -15,14 +15,8 @@ The code studies thinning strategies for particle-based mean-field dynamics in s
 - `run_mfg.py`: entry point for mean-field game experiments.
 - `mfld.py`: core mean-field dynamics simulation classes.
 - `utils/`: kernels, datasets, evaluation, problem definitions, and Lotka-Volterra simulators.
-- `scripts/`: local and cluster batch scripts.
-- `notebooks/` and `plotting_notebooks/`: experiment analysis and plotting notebooks.
-- `results*/`: experiment outputs.
 
 ## Requirements
-
-The code is written in Python and primarily uses JAX.
-
 Core dependencies:
 
 - `jax`, `jaxlib`
